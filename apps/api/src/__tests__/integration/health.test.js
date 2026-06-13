@@ -18,7 +18,14 @@ describe('health endpoints', () => {
     expect(res.body).toEqual({ status: 'ok', project: 'YumYumTree API' });
   });
 
-  it('GET /readyz returns 200 with db:ok when the DEV database is reachable', async () => {
+  // DB-touching test. Skip ONLY when CI explicitly reports no DEV database, i.e.
+  // CI_HAS_DEV_DB === 'false' (set by ci.yml when Supabase secrets are absent).
+  //   - local dev  : CI_HAS_DEV_DB is undefined → !== 'false' → RUNS (real .env present)
+  //   - CI + secrets: CI_HAS_DEV_DB === 'true'   → !== 'false' → RUNS
+  //   - CI, no creds: CI_HAS_DEV_DB === 'false'  →             → SKIPS
+  // The predicate keys on the explicit string 'false' (not falsiness) so an unset var
+  // never skips the local developer's run.
+  it.skipIf(process.env.CI_HAS_DEV_DB === 'false')('GET /readyz returns 200 with db:ok when the DEV database is reachable', async () => {
     const res = await request(app).get('/readyz');
     expect(res.status).toBe(200);
     expect(res.body.db).toBe('ok');

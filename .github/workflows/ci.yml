@@ -1,0 +1,95 @@
+name: CI
+
+# Triggers: every push (any branch) and every pull request targeting main.
+on:
+  push:
+  pull_request:
+    branches: [main]
+
+# Cancel an in-progress run for the same ref when a newer commit arrives.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ────────────────────────────────────────────────────────────────────────────
+  # apps/api — install + Vitest suite.
+  #
+  # DB-SECRET HANDLING (the important part):
+  #   The integration test (health.test.js → GET /readyz) does a live round-trip to
+  #   the DEV Supabase DB and therefore needs real credentials. Those are GitHub
+  #   repository secrets and MUST NOT appear as values in this file.
+  #
+  #   CI_HAS_DEV_DB is the single switch the suite reads:
+  #     - secrets present  → ${{ secrets.SUPABASE_URL != '' }} evaluates to 'true'
+  #                          → real creds are injected, the DB test RUNS.
+  #     - secrets absent   → evaluates to 'false'
+  #                          → NON-SECRET placeholders are injected (so config.js's
+  #                            fail-fast validation passes and the pure /health test
+  #                            still runs), and the suite SKIPS only the DB test.
+  #   See health.test.js for the exact skip predicate and its three-case rationale.
+  # ────────────────────────────────────────────────────────────────────────────
+  api:
+    name: api (vitest)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/api
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: apps/api/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run tests
+        run: npm test
+        env:
+          # 'true' only when this run can see the DEV Supabase secrets; 'false' otherwise
+          # (e.g. pull requests from forks, or a repo without secrets configured).
+          CI_HAS_DEV_DB: ${{ secrets.SUPABASE_URL != '' }}
+          # config.js fails fast when any required var is blank. Real secrets when available;
+          # otherwise harmless non-secret placeholders — enough to construct the app, not to
+          # reach a database. The DB test is skipped in that case, so the placeholders are
+          # never exercised against a real service.
+          PORT: ${{ secrets.PORT || '4000' }}
+          FRONTEND_URL: ${{ secrets.FRONTEND_URL || 'http://localhost:3000' }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL || 'https://placeholder.supabase.co' }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY || 'placeholder-service-role-key' }}
+          # APP_ENV is forced to 'test' by vitest.config.js (test.env), so it is not set here.
+
+  # ────────────────────────────────────────────────────────────────────────────
+  # apps/web — PARKED. The Next.js app does not exist yet (apps/ currently holds
+  # only `api`). Enabling this job now would fail on `npm ci` with no package.json.
+  # Uncomment verbatim the session that scaffolds apps/web; it needs no secrets —
+  # only the non-secret, build-time NEXT_PUBLIC_* placeholders below.
+  # ────────────────────────────────────────────────────────────────────────────
+  # web:
+  #   name: web (lint + build)
+  #   runs-on: ubuntu-latest
+  #   defaults:
+  #     run:
+  #       working-directory: apps/web
+  #   steps:
+  #     - uses: actions/checkout@v4
+  #     - uses: actions/setup-node@v4
+  #       with:
+  #         node-version: 20
+  #         cache: npm
+  #         cache-dependency-path: apps/web/package-lock.json
+  #     - name: Install dependencies
+  #       run: npm ci
+  #     - name: Lint
+  #       run: npm run lint
+  #     - name: Build
+  #       run: npm run build
+  #       env:
+  #         # Build-time publics only — NEVER real secrets.
+  #         NEXT_PUBLIC_BACKEND_URL: http://localhost:4000
+  #         NEXT_PUBLIC_SUPABASE_URL: https://placeholder.supabase.co
+  #         NEXT_PUBLIC_SUPABASE_ANON_KEY: placeholder
