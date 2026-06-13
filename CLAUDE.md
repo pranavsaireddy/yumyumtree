@@ -44,18 +44,19 @@ with the owner operating it from the admin dashboard without developer help.
 ---
 
 ## CURRENT STATE (rewritten every session)
-- Phase: A (Foundation). No sessions executed yet. Next: Session 1 (DB schema + RPCs).
-- Repo: monorepo apps/web (Next.js, :3000) + apps/api (Express, :4000), both boot.
-- Supabase DEV project live (Mumbai): customers, menu_categories, menu_items exist.
-- CI: not yet (arrives S2A). Prod environment: does not exist yet (arrives S14A).
-- External blockers: PetPooja credentials (emailed, awaiting), Shadowfax (not started),
-  Meta WhatsApp (not started), Razorpay (test mode available instantly when needed).
-- Gate 0: owner sign-offs #1/#2 <pending/SIGNED date>, PetPooja callback question sent <date>.
+- Phase: A (Foundation). S1 MERGED. Next: Session 2 (backend platform hardening + Vitest).
+- All 13 tables live in Supabase DEV; RLS deny-all; confirm_order + transition_order verified
+  live; Realtime on orders + menu_items. main clean (S1 squash-merged).
+- CI: not yet (S2A, right after S2). Prod env: not yet (S14A).
+- External blockers: PetPooja creds + callback answer (chase 2026-06-18), Shadowfax (not
+  started), Meta (not started), Razorpay (test mode on demand).
+- Gate 0: COMPLETE (cuts C-01/C-02 signed 2026-06-13; PetPooja callback question sent).
 
 ---
 
 ## RECENT SESSIONS (last 3 — full history in MASTER §7)
-(none yet)
+- S1 (MERGED 2026-06-13): 13 tables, indexes, RLS deny-all, confirm_order + transition_order
+  RPCs. State machine + idempotency verified live. Migrations run by hand (runner = S14A).
 
 ---
 

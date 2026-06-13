@@ -76,11 +76,11 @@ D-004 · 2026-06-XX · customers.id == Supabase auth uid (set at S6).
 ## 5. CUTS REGISTER  (append-only, owner-signed; a cut without a signature is a forgotten feature)
 C-01 · v1 CUT: proactive customer notifications (SMS/WhatsApp status alerts) for web/QR.
   v1 substitute: live tracking link; WhatsApp-channel orders get a confirmation in S24.
-  Revisit: v1.1.   Owner sign-off: <initials / date — PENDING Gate 0 item 1>.
+  Revisit: v1.1.   Owner sign-off: OWNER OK via WhatsApp, 2026-06-13.
 C-02 · v1 CUT: add-on machinery (menu_addons UI/pricing/sync) removed from the order path.
   v1 substitute: extras listed as standalone PetPooja menu items ("Extra Raita ₹30") that
   sync automatically. menu_addons table stays dormant.
-  Revisit: v1.1.   Owner sign-off: <initials / date — PENDING Gate 0 item 2>.
+  Revisit: v1.1.   Owner sign-off: OWNER OK via WhatsApp, 2026-06-13.
 C-03 · Kitchen progression model (preparing→ready driver): callback vs KDS-tablet.
   Status: UNDECIDED — depends on PetPooja's answer to the D2 callback question.
   To be filled before S21.   Owner sign-off: <pending PetPooja reply>.
@@ -88,18 +88,35 @@ C-03 · Kitchen progression model (preparing→ready driver): callback vs KDS-ta
 ---
 
 ## 6. CURRENT STATE  (the ONLY fully-rewritten section — ≤10 lines)
-- Phase A (Foundation). Sessions executed: none. Next: Session 1 (DB schema + RPCs).
-- main clean, both servers boot. Supabase DEV: customers, menu_categories, menu_items.
-- CI: none yet (S2A). Prod env: none yet (S14A).
-- Blockers: PetPooja creds (emailed) · Shadowfax (not started) · Meta (not started) ·
-  Razorpay (test mode on demand).
-- Gate 0: owner sign-offs PENDING; PetPooja callback question PENDING send.
+- Phase A (Foundation). Sessions executed: S1 MERGED. Next: Session 2 (backend platform
+  hardening + Vitest harness) with V2 Patch additions (APP_ENV mandatory, assertSafeTestDb).
+- main clean, S1 squash-merged. All 13 tables live in Supabase DEV; RLS deny-all (all true);
+  confirm_order + transition_order verified live; Realtime on orders + menu_items.
+- CI: none yet (S2A, immediately after S2). Prod env: none yet (S14A).
+- Blockers: PetPooja creds + callback answer (chase 2026-06-18) · Shadowfax (not started) ·
+  Meta (not started) · Razorpay (test mode on demand).
+- Gate 0: COMPLETE (cuts C-01/C-02 signed; PetPooja question sent).
 - Nothing broken-but-known.
 
 ---
 
 ## 7. SESSION HISTORY  (append-only spine — includes failed sessions with their why)
-(none yet — first entry will be Session 1's context-update block)
+
+### Session 1 — Database schema + RPCs  ·  MERGED 2026-06-13
+- Full schema deployed (all 13 tables): orders, order_items, menu_addons, tables,
+  order_events, processed_webhooks, outbox, loyalty_transactions, menu_sync_log,
+  whatsapp_sessions (+ the 3 pre-existing). Migrations 001–005 in apps/api/db/migrations/,
+  idempotent, run manually in the Supabase SQL editor (runner arrives S14A).
+- Idempotency DB-enforced: UNIQUE(idempotency_key), partial UNIQUE(razorpay_payment_id)
+  WHERE NOT NULL, UNIQUE(source,event_id,event_type) on processed_webhooks,
+  UNIQUE(order_id) on loyalty_transactions.
+- State machine enforced inside transition_order() — verified live: placed→delivered RAISEs
+  'Invalid transition'. confirm_order() verified idempotent (duplicate webhook → count 1).
+- RLS enabled deny-all on ALL 13 tables (zero policies; V2 Patch O1). Verified: all
+  rowsecurity=true. Read policies deferred to S11.
+- Realtime enabled on orders + menu_items.
+- PARKED → see Debt T-002..T-005 (other RPCs, admin_audit_log, read policies, migration runner)
+  — all already scheduled in later sessions, no action needed.
 
 ---
 
@@ -118,6 +135,13 @@ R-004 · Team-of-one bus factor · low/high · Current State stale >3 days · hu
 ## 9. KNOWN TECHNICAL DEBT  (T-### · what · where · cost-of-ignoring · planned-repayment)
 T-001 · Phone-OTP login UI ships disabled (no SMS provider funded) · apps/web /login ·
   customers limited to Google sign-in · repay: pre-launch provider decision.
+T-002 · place_order / redeem_loyalty / award_loyalty / admin_transition_order RPCs not built ·
+  apps/api/db · none (scheduled) · repay: S7 / S17 / S19 as specced.
+T-003 · admin_audit_log table not built · apps/api/db · none (scheduled) · repay: S18.
+T-004 · RLS read policies absent (deny-all only) · all tables · frontend can't read via anon
+  key yet (intended) · repay: S11.
+T-005 · No checksummed migration ledger; SQL run by hand · apps/api/db · drift risk across
+  envs · repay: S14A (scripts/migrate.js + schema_migrations).
 (more accrue as PARKED items from sessions)
 
 ---
@@ -134,8 +158,8 @@ T-001 · Phone-OTP login UI ships disabled (no SMS provider funded) · apps/web 
 ---
 
 ## 11. EXTERNAL INTEGRATION STATUS  (one block per partner — why blockers get chased)
-- PetPooja · creds held: NO · mode: mock · last contact: API-access email sent +
-  callback question <date> · next chase: +5 days · note: confirm callback support (C-03).
+- PetPooja · creds held: NO · mode: mock · last contact: API-access email + callback
+  question sent 2026-06-13 · next chase: 2026-06-18 · note: confirm callback support (C-03).
 - Shadowfax · creds: NO · mode: mock · onboarding: not started · next chase: when Phase E nears.
 - Meta WhatsApp · creds: NO · Business Manager: not created · next: before S23.
 - Razorpay · test mode: available on demand · live: KYC not started (S15A) · note: live
