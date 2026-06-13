@@ -10,7 +10,7 @@ See `CLAUDE.md` and `docs/` for architecture and the session roadmap.
 ![CI](https://github.com/pranavsaireddy/yumyumtree/actions/workflows/ci.yml/badge.svg)
 
 GitHub Actions (`.github/workflows/ci.yml`) runs on every push and on pull requests to
-`main`. The **api** job installs `apps/api` and runs the Vitest suite on Node 20.
+`main`. The **api** job installs `apps/api` and runs the Vitest suite on Node 22.
 
 The integration test (`GET /readyz`) needs the live DEV Supabase DB, so CI keys on the
 `CI_HAS_DEV_DB` switch: when the repository secrets (`SUPABASE_URL`,
