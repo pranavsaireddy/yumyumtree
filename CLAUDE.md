@@ -46,20 +46,25 @@ with the owner operating it from the admin dashboard without developer help.
 ---
 
 ## CURRENT STATE (rewritten every session)
-- Phase: A (Foundation). S1 + S2 MERGED. Next: Session 2A (CI — GitHub Actions).
-- Backend platform live: fail-fast config (APP_ENV mandatory + prod assertion), pino logging,
-  {error,code} contract, /health + /readyz (DB-backed), Vitest harness (2 tests green vs DEV).
-- main clean (S2 squash-merged + pushed). CI: not yet (S2A is next). Prod env: not yet (S14A).
+- Phase: A (Foundation). S1 + S2 + S2A MERGED. Next: Session 3 (domain core — state-machine
+  app-mirror, Zod schemas in packages/types, pricing service; pure logic, no DB writes).
+- CI LIVE & GREEN on Node 22 (api job runs Vitest; 1 passed | 1 skipped without DEV secrets).
+  Backend platform live (S2). apps/web re-scaffolded on Next 16 (D-005) + committed.
+- main clean + pushed. Prod env: not yet (S14A). CI repo secrets NOT added (DB test skips in
+  CI by design; local suite covers it).
 - External blockers: PetPooja creds + callback (chase 2026-06-18), Shadowfax/Meta (not
-  started), Razorpay (test mode on demand).
-- Gate 0: COMPLETE. T-006: vitest dev-dep audit advisories (repay S2A).
+  started), Razorpay (test mode on demand), domain not owned (needed before S16).
+- Gate 0: COMPLETE. Debt: T-006 (vitest audit, parked), T-007 (CI action-version deprecation).
+- CI on Node 22 is the source of truth, not local Node 24.
 
 ---
 
 ## RECENT SESSIONS (last 3 — full history in MASTER §7)
+- S2A (MERGED 2026-06-13): GitHub Actions CI (api job, Node 22, Vitest). CI caught a real
+  Node-20-no-WebSocket bug → fixed by Node 20→22. apps/web re-scaffolded (Next 16). web CI
+  job parked until S5.
 - S2 (MERGED 2026-06-13): backend platform — fail-fast config, pino, error contract,
-  /health + /readyz, Vitest+Supertest harness with assertSafeTestDb prod-fence. 2 tests
-  green vs DEV DB. node --watch (not nodemon), vitest globals, root .gitignore added.
+  /health + /readyz, Vitest+Supertest harness with assertSafeTestDb prod-fence.
 - S1 (MERGED 2026-06-13): 13 tables, indexes, RLS deny-all, confirm_order + transition_order
   RPCs. State machine + idempotency verified live. Migrations run by hand (runner = S14A).
 

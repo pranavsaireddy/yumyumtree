@@ -70,6 +70,12 @@ D-004 · 2026-06-XX · customers.id == Supabase auth uid (set at S6).
   Why: one identity, no mapping table, simplest upsert-on-first-auth.
   Revisit-if: ever need non-auth (guest) customers persisted.
   Decided-by: roadmap S6 spec.
+D-005 · 2026-06-13 · apps/web scaffolded on Next.js 16 (docs say "Next 14").
+  Why: original scaffold was lost/uncommitted; create-next-app installs current stable (16).
+  App Router + server components unchanged from 14; no roadmap impact. Also pinned CI/runtime
+  to Node 22+ (native WebSocket — supabase-js realtime requirement).
+  Revisit-if: a Next 16 breaking change bites a later frontend session.
+  Decided-by: Fable proposal, human approved.
 
 ---
 
@@ -88,16 +94,18 @@ C-03 · Kitchen progression model (preparing→ready driver): callback vs KDS-ta
 ---
 
 ## 6. CURRENT STATE  (the ONLY fully-rewritten section — ≤10 lines)
-- Phase A (Foundation). Sessions executed: S1, S2 MERGED. Next: Session 2A (CI — GitHub
-  Actions: api tests + web lint/build; branch-protect main).
-- main clean, S2 squash-merged + pushed. Backend platform live: fail-fast config, pino,
-  error contract, /health + /readyz (DB-backed), Vitest harness (2 tests green vs DEV DB).
-- CI: none yet (S2A is next). Prod env: none yet (S14A).
+- Phase A (Foundation). Sessions executed: S1, S2, S2A MERGED. Next: Session 3 (domain core —
+  state machine app-mirror, Zod schemas, pricing service; pure logic, no DB writes).
+- main clean + pushed. CI LIVE & GREEN on Node 22 (api job; 1 passed | 1 skipped without
+  secrets). apps/web re-scaffolded (Next 16) + committed. Backend platform live from S2.
+- Prod env: none yet (S14A). Repo secrets for CI DB test: NOT added (DB test skips in CI by
+  design; local suite covers it).
 - Blockers: PetPooja creds + callback (chase 2026-06-18) · Shadowfax (not started) ·
-  Meta (not started) · Razorpay (test mode on demand).
-- Gate 0: COMPLETE. Nothing broken-but-known. (T-006: vitest dev-dep audit advisories,
-  repay at S2A.)
-- PROCESS: create the session branch BEFORE opening Claude Code; prompt forbids git ops.
+  Meta (not started) · Razorpay (test mode on demand) · domain not owned (needed before S16).
+- Gate 0: COMPLETE. Nothing broken-but-known. Debt: T-006 (vitest audit, parked), T-007
+  (action-version deprecation, non-blocking).
+- PROCESS: PowerShell — run git one line at a time, no && / ||. Branch BEFORE Claude Code;
+  prompt forbids git. CI on Node 22 is the source of truth, not local Node 24.
 
 ---
 
@@ -116,6 +124,7 @@ C-03 · Kitchen progression model (preparing→ready driver): callback vs KDS-ta
 - RLS enabled deny-all on ALL 13 tables (zero policies; V2 Patch O1). Verified: all
   rowsecurity=true. Read policies deferred to S11.
 - Realtime enabled on orders + menu_items.
+
 ### Session 2 — Backend platform hardening + Vitest harness  ·  MERGED 2026-06-13
 - Fail-fast config (src/config.js): required vars [PORT, FRONTEND_URL, SUPABASE_URL,
   SUPABASE_SERVICE_ROLE_KEY, APP_ENV] validated at import; APP_ENV ∈ {development,test,
@@ -134,6 +143,25 @@ C-03 · Kitchen progression model (preparing→ready driver): callback vs KDS-ta
 - Added root .gitignore (closed a .env leak risk) + apps/api/.env.example.
 - PROCESS NOTE: Claude built on main then self-created the branch; from S2A the branch is
   created BEFORE the Claude Code conversation and the prompt forbids git operations.
+
+### Session 2A — CI pipeline (GitHub Actions)  ·  MERGED 2026-06-13
+- .github/workflows/ci.yml: api job (Node 22, npm cache) runs Vitest on push + PRs to main.
+  CI_HAS_DEV_DB = (secrets.SUPABASE_URL != '') gates the DB test — real DEV creds injected
+  when present (test runs), non-secret placeholders otherwise (DB test skips via
+  it.skipIf(CI_HAS_DEV_DB==='false'), /health always runs). No npm audit gating (T-006).
+  README CI badge added. Per-app install (no root workspaces package.json).
+- web job PARKED as a ready-to-uncomment scaffold; enable when frontend work begins (S5).
+- IN-SESSION BUG, caught by CI, fixed and re-verified green (the system working as designed):
+  CI initially RED. Root cause: pinned Node 20 lacks native WebSocket; @supabase/supabase-js
+  RealtimeClient requires it (Node 22+). Passed locally (Node 24), failed only in CI — pure
+  environment drift. Fix (T4, minimal): CI Node 20→22 in ci.yml (api + parked web) + README.
+  No app code touched, no ws dependency. Re-run → green (1 passed | 1 skipped). Lesson: CI on
+  Node 22 is now the source of truth; local Node 24 is not authoritative.
+- apps/web RE-SCAFFOLDED this session: the original create-next-app scaffold from initial
+  setup was never committed (git ls-tree of first commit shows no web/) and was absent from
+  disk. Re-created via create-next-app on Next.js 16 (see D-005), + S5 frontend deps
+  (@supabase/supabase-js, @supabase/ssr, zustand, react-hot-toast, lucide-react). npm run
+  build passed. Committed separately as chore(web): scaffold.
 
 ---
 
@@ -161,6 +189,10 @@ T-005 · No checksummed migration ledger; SQL run by hand · apps/api/db · drif
   envs · repay: S14A (scripts/migrate.js + schema_migrations).
 T-006 · 5 npm-audit advisories (1 crit/1 high) in vitest→esbuild/vite chain · apps/api ·
   devDependency only, NOT in runtime path · repay: S2A (pin or bump vitest deliberately).
+T-007 · CI uses actions/checkout@v4 + setup-node@v4 (Node-20 action runtime, deprecated;
+  GitHub forces Node 24 by 2026-06-16) · .github/workflows/ci.yml · non-blocking warning ·
+  repay: bump to @v5 actions when stable. (NOTE: T-006 reviewed at S2A — left parked, audit
+  not gated in CI; revisit only if vitest bumped.)
 (more accrue as PARKED items from sessions)
 
 ---
