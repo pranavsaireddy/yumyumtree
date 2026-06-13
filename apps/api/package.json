@@ -1,0 +1,25 @@
+{
+  "name": "@yumyumtree/api",
+  "version": "0.1.0",
+  "private": true,
+  "description": "YumYumTree backend API (Express)",
+  "main": "src/server.js",
+  "scripts": {
+    "dev": "node --watch src/server.js",
+    "start": "node src/server.js",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2",
+    "cors": "^2",
+    "dotenv": "^16",
+    "express": "^4",
+    "pino": "^9",
+    "pino-pretty": "^13"
+  },
+  "devDependencies": {
+    "supertest": "^7",
+    "vitest": "^2"
+  }
+}
