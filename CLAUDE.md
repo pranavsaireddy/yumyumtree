@@ -30,6 +30,8 @@ with the owner operating it from the admin dashboard without developer help.
 - Tests must be able to fail; .skip/.only never merge.
 - RLS is deny-all from Session 1; only Session 11 adds read policies.
 - Build ONLY the current session's scope. Out-of-scope needs go under a PARKED heading.
+- Claude Code never runs git (no branch/commit/merge); the human owns all git. The
+  session branch is created BEFORE the conversation opens.
 
 ## CONVENTIONS
 - Errors: { error, code } + correct HTTP status, thrown via asyncHandler.
@@ -44,21 +46,23 @@ with the owner operating it from the admin dashboard without developer help.
 ---
 
 ## CURRENT STATE (rewritten every session)
-- Phase: A (Foundation). S1 MERGED. Next: Session 2 (backend platform hardening + Vitest).
-- All 13 tables live in Supabase DEV; RLS deny-all; confirm_order + transition_order verified
-  live; Realtime on orders + menu_items. main clean (S1 squash-merged).
-- CI: not yet (S2A, right after S2). Prod env: not yet (S14A).
-- External blockers: PetPooja creds + callback answer (chase 2026-06-18), Shadowfax (not
-  started), Meta (not started), Razorpay (test mode on demand).
-- Gate 0: COMPLETE (cuts C-01/C-02 signed 2026-06-13; PetPooja callback question sent).
+- Phase: A (Foundation). S1 + S2 MERGED. Next: Session 2A (CI — GitHub Actions).
+- Backend platform live: fail-fast config (APP_ENV mandatory + prod assertion), pino logging,
+  {error,code} contract, /health + /readyz (DB-backed), Vitest harness (2 tests green vs DEV).
+- main clean (S2 squash-merged + pushed). CI: not yet (S2A is next). Prod env: not yet (S14A).
+- External blockers: PetPooja creds + callback (chase 2026-06-18), Shadowfax/Meta (not
+  started), Razorpay (test mode on demand).
+- Gate 0: COMPLETE. T-006: vitest dev-dep audit advisories (repay S2A).
 
 ---
 
 ## RECENT SESSIONS (last 3 — full history in MASTER §7)
+- S2 (MERGED 2026-06-13): backend platform — fail-fast config, pino, error contract,
+  /health + /readyz, Vitest+Supertest harness with assertSafeTestDb prod-fence. 2 tests
+  green vs DEV DB. node --watch (not nodemon), vitest globals, root .gitignore added.
 - S1 (MERGED 2026-06-13): 13 tables, indexes, RLS deny-all, confirm_order + transition_order
   RPCs. State machine + idempotency verified live. Migrations run by hand (runner = S14A).
 
----
 
 ## POINTER INDEX
 - Schema: arch §6 · State machine: §7 · Idempotency: §8 · Queue: §9 · Outbox: §10

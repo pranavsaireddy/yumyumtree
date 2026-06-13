@@ -88,15 +88,16 @@ C-03 · Kitchen progression model (preparing→ready driver): callback vs KDS-ta
 ---
 
 ## 6. CURRENT STATE  (the ONLY fully-rewritten section — ≤10 lines)
-- Phase A (Foundation). Sessions executed: S1 MERGED. Next: Session 2 (backend platform
-  hardening + Vitest harness) with V2 Patch additions (APP_ENV mandatory, assertSafeTestDb).
-- main clean, S1 squash-merged. All 13 tables live in Supabase DEV; RLS deny-all (all true);
-  confirm_order + transition_order verified live; Realtime on orders + menu_items.
-- CI: none yet (S2A, immediately after S2). Prod env: none yet (S14A).
-- Blockers: PetPooja creds + callback answer (chase 2026-06-18) · Shadowfax (not started) ·
+- Phase A (Foundation). Sessions executed: S1, S2 MERGED. Next: Session 2A (CI — GitHub
+  Actions: api tests + web lint/build; branch-protect main).
+- main clean, S2 squash-merged + pushed. Backend platform live: fail-fast config, pino,
+  error contract, /health + /readyz (DB-backed), Vitest harness (2 tests green vs DEV DB).
+- CI: none yet (S2A is next). Prod env: none yet (S14A).
+- Blockers: PetPooja creds + callback (chase 2026-06-18) · Shadowfax (not started) ·
   Meta (not started) · Razorpay (test mode on demand).
-- Gate 0: COMPLETE (cuts C-01/C-02 signed; PetPooja question sent).
-- Nothing broken-but-known.
+- Gate 0: COMPLETE. Nothing broken-but-known. (T-006: vitest dev-dep audit advisories,
+  repay at S2A.)
+- PROCESS: create the session branch BEFORE opening Claude Code; prompt forbids git ops.
 
 ---
 
@@ -115,8 +116,24 @@ C-03 · Kitchen progression model (preparing→ready driver): callback vs KDS-ta
 - RLS enabled deny-all on ALL 13 tables (zero policies; V2 Patch O1). Verified: all
   rowsecurity=true. Read policies deferred to S11.
 - Realtime enabled on orders + menu_items.
-- PARKED → see Debt T-002..T-005 (other RPCs, admin_audit_log, read policies, migration runner)
-  — all already scheduled in later sessions, no action needed.
+### Session 2 — Backend platform hardening + Vitest harness  ·  MERGED 2026-06-13
+- Fail-fast config (src/config.js): required vars [PORT, FRONTEND_URL, SUPABASE_URL,
+  SUPABASE_SERVICE_ROLE_KEY, APP_ENV] validated at import; APP_ENV ∈ {development,test,
+  production}; production-asserts NODE_ENV (V2 Patch C2). Optional §11 vars warn-only.
+- pino logger (no console.log anywhere — verified by grep). Service-role Supabase client
+  (backend only, no session persistence). asyncHandler + errorHandler ({error,code} contract).
+- app.js restructured: cors, the commented raw-body-before-json webhook placeholder (§8),
+  express.json, GET /health, GET /readyz (real DB ping → 503 {db:down} on failure), error
+  handler last.
+- Vitest + Supertest harness; assertSafeTestDb() prod-fence (V2 Patch T2: refuses
+  APP_ENV=production or SUPABASE_URL host == PROD_DB_HOST). 2 tests green vs live DEV DB.
+  __tests__/README.md documents the test_-prefix + afterAll-cleanup isolation strategy.
+- Deviations (all sound): node --watch instead of nodemon (no dep approved); vitest globals
+  (globals:true) instead of require('vitest') (vitest API is ESM-only); logger reads
+  process.env.APP_ENV directly to break a config↔logger cycle.
+- Added root .gitignore (closed a .env leak risk) + apps/api/.env.example.
+- PROCESS NOTE: Claude built on main then self-created the branch; from S2A the branch is
+  created BEFORE the Claude Code conversation and the prompt forbids git operations.
 
 ---
 
@@ -142,6 +159,8 @@ T-004 · RLS read policies absent (deny-all only) · all tables · frontend can'
   key yet (intended) · repay: S11.
 T-005 · No checksummed migration ledger; SQL run by hand · apps/api/db · drift risk across
   envs · repay: S14A (scripts/migrate.js + schema_migrations).
+T-006 · 5 npm-audit advisories (1 crit/1 high) in vitest→esbuild/vite chain · apps/api ·
+  devDependency only, NOT in runtime path · repay: S2A (pin or bump vitest deliberately).
 (more accrue as PARKED items from sessions)
 
 ---
