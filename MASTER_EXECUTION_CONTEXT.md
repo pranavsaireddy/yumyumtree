@@ -76,6 +76,11 @@ D-005 · 2026-06-13 · apps/web scaffolded on Next.js 16 (docs say "Next 14").
   to Node 22+ (native WebSocket — supabase-js realtime requirement).
   Revisit-if: a Next 16 breaking change bites a later frontend session.
   Decided-by: Fable proposal, human approved.
+D-006 · 2026-06-13 · Zod schemas + domain types live in apps/api; NO packages/types workspace.
+  Why: no second consumer yet (frontend/admin don't consume them). Handbook: extract shared
+  infra only when ≥2 real consumers exist. Avoids premature monorepo machinery.
+  Revisit-if: S8 (checkout) or S20 (admin) needs client-side schema reuse → extract then.
+  Decided-by: human decision, Fable concurred (resolves PE review finding X1).
 
 ---
 
@@ -94,18 +99,17 @@ C-03 · Kitchen progression model (preparing→ready driver): callback vs KDS-ta
 ---
 
 ## 6. CURRENT STATE  (the ONLY fully-rewritten section — ≤10 lines)
-- Phase A (Foundation). Sessions executed: S1, S2, S2A MERGED. Next: Session 3 (domain core —
-  state machine app-mirror, Zod schemas, pricing service; pure logic, no DB writes).
-- main clean + pushed. CI LIVE & GREEN on Node 22 (api job; 1 passed | 1 skipped without
-  secrets). apps/web re-scaffolded (Next 16) + committed. Backend platform live from S2.
-- Prod env: none yet (S14A). Repo secrets for CI DB test: NOT added (DB test skips in CI by
-  design; local suite covers it).
+- Phase A (Foundation) COMPLETE: S1, S2, S2A, S3 all MERGED. Next: Phase B begins — Session 4
+  (Menu API + mock PetPooja menu, first real route + GET /api/menu).
+- main clean + pushed (b6b75c2). CI green on Node 22. Full suite 52 tests. Backend platform +
+  domain core (state machine mirror, strict Zod schemas, pure pricing) all live.
+- Prod env: none yet (S14A). CI repo secrets: not added (DB test skips in CI by design).
 - Blockers: PetPooja creds + callback (chase 2026-06-18) · Shadowfax (not started) ·
-  Meta (not started) · Razorpay (test mode on demand) · domain not owned (needed before S16).
-- Gate 0: COMPLETE. Nothing broken-but-known. Debt: T-006 (vitest audit, parked), T-007
-  (action-version deprecation, non-blocking).
-- PROCESS: PowerShell — run git one line at a time, no && / ||. Branch BEFORE Claude Code;
-  prompt forbids git. CI on Node 22 is the source of truth, not local Node 24.
+  Meta (not started) · Razorpay (test mode on demand) · domain yumyumtree.in not owned (S16).
+- Gate 0: COMPLETE. Debt: T-006 (vitest audit, parked), T-007 (CI action deprecation),
+  T-008 (scheduled_at timezone). Risk R-005 (app/DB whitelist lockstep).
+- PROCESS: PowerShell git one line at a time (no && / ||). Branch BEFORE Claude Code.
+  CI on Node 22 is the source of truth.
 
 ---
 
@@ -163,6 +167,28 @@ C-03 · Kitchen progression model (preparing→ready driver): callback vs KDS-ta
   (@supabase/supabase-js, @supabase/ssr, zustand, react-hot-toast, lucide-react). npm run
   build passed. Committed separately as chore(web): scaffold.
 
+### Session 3 — Domain core (state machine, Zod schemas, pricing)  ·  MERGED 2026-06-13
+- Pure application-layer logic, no DB/routes/external calls, all in apps/api (lean path — see
+  D-006: no packages/types workspace yet). Added zod@^3 (approved).
+- domain/orderStateMachine.js: VALID_TRANSITIONS frozen, mirrors §7 whitelist EXACTLY
+  (diffed line-by-line). assertTransition → {status:422, code:INVALID_TRANSITION};
+  allowedTransitions (returns a .slice() copy — mutation-safe, tested); isTerminal.
+  This is the fail-fast app guard; the DB transition_order RPC remains ultimate enforcer.
+- schemas/order.js: strict Zod (unknown keys rejected at every level). OrderItemSchema has
+  NO addons field (C-02); CreateOrderSchema per §27 minus addons & loyalty-math; cross-field
+  refines (delivery→address, dine_in→table_id); same-day scheduled_at; Hyderabad bbox
+  (lat 17-18, lng 78-79). loyalty_points_to_redeem kept as valid input (service rejects until
+  S17). JSDoc typedefs, no TypeScript in apps/api.
+- services/pricing.js: pure computeTotals(items, priceMap) — verified zero imports. Price
+  SNAPSHOT from priceMap (test proves a client-supplied price:1 is ignored, uses DB 280);
+  ITEM_NOT_FOUND / ITEM_UNAVAILABLE (422); 2-decimal rupee rounding (3×33.33=99.99). No paise
+  (Razorpay edge only), no discount/total (loyalty=S17) — subtotal only.
+- 50 new unit tests (state machine 30, schema 14, pricing 6); full suite 52 green.
+  Mutation-checked: breaking the transition guard produced 10 failures, then reverted → green.
+- Concerns logged: T-008 (scheduled_at same-day refine uses server-local time — must be IST
+  before scheduling goes live), R-005 (app mirror ⇄ DB RPC whitelist must stay in lockstep).
+- PARKED: none.
+
 ---
 
 ## 8. OPEN RISKS  (R-### · risk · likelihood/impact · trigger-to-watch · owner · status)
@@ -174,6 +200,9 @@ R-003 · Velocity addiction thins manual testing over months · med/high · 2+ e
   one session · human · OPEN — 2-sessions/day cap, paper checklists.
 R-004 · Team-of-one bus factor · low/high · Current State stale >3 days · human · OPEN —
   runbooks written so owner/Anudeep could operate prod.
+R-005 · App state-machine mirror (domain/orderStateMachine.js) and DB transition_order RPC
+  can drift · low/high · a §7 change touching only one side · human+Fable · OPEN — change
+  both together; consider a shared fixture/cross-check when S7 wires the route.
 
 ---
 
@@ -193,6 +222,9 @@ T-007 · CI uses actions/checkout@v4 + setup-node@v4 (Node-20 action runtime, de
   GitHub forces Node 24 by 2026-06-16) · .github/workflows/ci.yml · non-blocking warning ·
   repay: bump to @v5 actions when stable. (NOTE: T-006 reviewed at S2A — left parked, audit
   not gated in CI; revisit only if vitest bumped.)
+T-008 · scheduled_at same-day refine uses server-local time · apps/api/src/schemas/order.js ·
+  'later today' could mean wrong day if server isn't IST · repay: before scheduling goes live,
+  pin comparison to Asia/Kolkata or ensure server runs IST.
 (more accrue as PARKED items from sessions)
 
 ---
@@ -225,4 +257,18 @@ T-007 · CI uses actions/checkout@v4 + setup-node@v4 (Node-20 action runtime, de
 ---
 
 ## 13. PHASE RETROSPECTIVES  (one paragraph at each phase boundary)
-(none yet — first at the end of Phase A / Session 3)
+
+### Phase A (Foundation) — S1, S2, S2A, S3 · complete 2026-06-13
+What we built: the full DB schema with DB-enforced idempotency + state machine + RLS deny-all
+(S1), the hardened backend platform with fail-fast config and a real test harness (S2), live
+CI on GitHub Actions (S2A), and the pure domain core — state-machine mirror, strict Zod
+schemas, pricing (S3). 52 tests green; everything mock/local, nothing deployed yet.
+What surprised us: environment drift bit twice, both from Node versions — vitest's ESM-only
+API in S2, and the Node-20-no-WebSocket crash CI caught in S2A (invisible on local Node 24).
+Lesson banked: CI on Node 22 is now the source of truth, not local. Also: apps/web was lost
+(never committed in initial setup) and had to be re-scaffolded on Next 16 — a reminder that
+"it ran once locally" ≠ "it's in the repo."
+What Phase B should fear: S4 is the first real route and first mock-provider; from here code
+touches the DB through the service-role client. The discipline that matters next is the
+mock-behind-a-flag pattern (so PetPooja/Shadowfax stay swappable) and keeping the money path's
+review rigor high as routes start carrying real logic.

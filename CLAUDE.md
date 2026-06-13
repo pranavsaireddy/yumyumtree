@@ -46,27 +46,28 @@ with the owner operating it from the admin dashboard without developer help.
 ---
 
 ## CURRENT STATE (rewritten every session)
-- Phase: A (Foundation). S1 + S2 + S2A MERGED. Next: Session 3 (domain core — state-machine
-  app-mirror, Zod schemas in packages/types, pricing service; pure logic, no DB writes).
-- CI LIVE & GREEN on Node 22 (api job runs Vitest; 1 passed | 1 skipped without DEV secrets).
-  Backend platform live (S2). apps/web re-scaffolded on Next 16 (D-005) + committed.
-- main clean + pushed. Prod env: not yet (S14A). CI repo secrets NOT added (DB test skips in
-  CI by design; local suite covers it).
+- Phase A (Foundation) COMPLETE: S1, S2, S2A, S3 MERGED. Next: Phase B / Session 4 — Menu API
+  (first real route GET /api/menu + mock PetPooja menu service).
+- Live: full DB schema (RLS deny-all, idempotency, state machine RPCs), hardened backend
+  platform, GitHub Actions CI (green, Node 22), domain core (state-machine mirror, strict Zod
+  schemas, pure pricing). Full suite 52 tests green.
+- main clean + pushed. Prod env: not yet (S14A). CI repo secrets not added (DB test skips in CI).
 - External blockers: PetPooja creds + callback (chase 2026-06-18), Shadowfax/Meta (not
   started), Razorpay (test mode on demand), domain not owned (needed before S16).
-- Gate 0: COMPLETE. Debt: T-006 (vitest audit, parked), T-007 (CI action-version deprecation).
+- Gate 0: COMPLETE. Debt: T-006/T-007/T-008. Risk R-005 (app/DB whitelist lockstep — touch
+  both orderStateMachine.js AND transition_order RPC together).
 - CI on Node 22 is the source of truth, not local Node 24.
 
 ---
 
 ## RECENT SESSIONS (last 3 — full history in MASTER §7)
-- S2A (MERGED 2026-06-13): GitHub Actions CI (api job, Node 22, Vitest). CI caught a real
-  Node-20-no-WebSocket bug → fixed by Node 20→22. apps/web re-scaffolded (Next 16). web CI
-  job parked until S5.
+- S3 (MERGED 2026-06-13): domain core — orderStateMachine.js (§7 mirror, frozen whitelist),
+  strict Zod schemas (addons cut per C-02, loyalty kept as input), pure computeTotals pricing.
+  50 unit tests, suite 52 green. zod@^3 added. Schemas live in apps/api (D-006, no workspace).
+- S2A (MERGED 2026-06-13): GitHub Actions CI (Node 22, Vitest). Caught & fixed a Node-20
+  WebSocket bug. apps/web re-scaffolded (Next 16). web CI job parked until S5.
 - S2 (MERGED 2026-06-13): backend platform — fail-fast config, pino, error contract,
   /health + /readyz, Vitest+Supertest harness with assertSafeTestDb prod-fence.
-- S1 (MERGED 2026-06-13): 13 tables, indexes, RLS deny-all, confirm_order + transition_order
-  RPCs. State machine + idempotency verified live. Migrations run by hand (runner = S14A).
 
 
 ## POINTER INDEX
