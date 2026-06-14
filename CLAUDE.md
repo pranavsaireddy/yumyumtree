@@ -46,29 +46,30 @@ with the owner operating it from the admin dashboard without developer help.
 ---
 
 ## CURRENT STATE (rewritten every session)
-- Phase B (Menu + Cart) IN PROGRESS: S1, S2, S2A, S3, S4, S5 MERGED. Next: Session 6 — auth
-  (Supabase OTP + Google; customers.id == auth uid per D-004).
-- Live: full DB schema, hardened backend, domain core, GET /api/menu (mock-backed), AND the
-  frontend menu page + in-memory cart (server-component menu, client cart islands). Human-
-  tested desktop + mobile.
-- CI green on Node 22 — BOTH api (vitest) + web (lint+build) jobs now run on every push.
+- Phase B (Menu + Cart) effectively COMPLETE: S1, S2, S2A, S3, S4, S5, S6 MERGED. Next:
+  Session 7 — order creation (POST /api/orders: Zod validate, SERVER-SIDE pricing, idempotency
+  key, create Razorpay order, status=pending_payment). FIRST money-path session — high review.
+- Live: DB schema, backend, domain core, GET /api/menu (mock), menu page + cart, Google sign-in
+  (@supabase/ssr; customers row on login, id==auth uid per D-004). Suite 66 + web lint/build.
+- CI green on Node 22 — both api + web jobs. RLS still DENY-ALL (read policies = S11).
 - TEAM: SOLO build — Pranav owns backend and frontend. No Anudeep (earlier context superseded).
-- main clean + pushed. Prod env: not yet (S14A). CI repo secrets not added (DB test skips).
-- External blockers: PetPooja creds + callback (chase 2026-06-18), Shadowfax/Meta (not
-  started), Razorpay (test mode on demand), domain not owned (needed before S16).
-- Gate 0: COMPLETE. Debt: T-006..T-010. Risk R-005 (app/DB whitelist lockstep).
-- CI on Node 22 is the source of truth, not local Node 24.
+- main clean + pushed. Prod env: not yet (S14A). CI repo secrets not added.
+- Blockers: PetPooja creds+callback (chase 2026-06-18), Shadowfax/Meta (not started), Razorpay
+  (TEST-MODE keys needed for S7), domain not owned (before S16).
+- Gate 0 COMPLETE. Debt T-006..T-010. Risk R-005 (app/DB whitelist lockstep). D-007 = no guest.
+- CI on Node 22 is the source of truth. Run `git status` clean-tree check before each session.
 
 ---
 
 ## RECENT SESSIONS (last 3 — full history in MASTER §7)
-- S5 (MERGED 2026-06-14): FIRST frontend — server-component menu page (consumes /api/menu) +
-  in-memory Zustand cart (desktop drawer, mobile sticky bar + sheet). Navy/gold brand. web CI
-  job un-parked (both jobs green). Subtotal display-only. Human-tested desktop + mobile.
-- S4 (MERGED 2026-06-14): Menu API — GET /api/menu + mock PetPooja provider seam (mock now,
-  DB-backed at S21). Real YumYumTree menu seed (9 cats, 82 items). Suite 62 green. T-009.
-- S3 (MERGED 2026-06-13): domain core — orderStateMachine.js (§7 mirror), strict Zod schemas
-  (addons cut C-02), pure computeTotals pricing. 50 unit tests. zod@^3. Schemas in apps/api (D-006).
+- S6 (MERGED 2026-06-14): Google sign-in (Supabase OAuth, @supabase/ssr). AuthButton header
+  island; /auth/callback; POST /api/auth/sync verifies Bearer token, upserts customers
+  (id==auth uid) via service-role, body identity ignored (tested). 66 green. Human-verified
+  login + forge-rejection. No middleware/RLS changes yet (deferred S8/S11). D-007 = no guest.
+- S5 (MERGED 2026-06-14): FIRST frontend — server-component menu page + in-memory Zustand cart
+  (desktop drawer, mobile bar+sheet). Navy/gold brand. web CI job un-parked. Human-tested.
+- S4 (MERGED 2026-06-14): Menu API — GET /api/menu + mock PetPooja seam. Real menu seed (9
+  cats, 82 items). Suite 62 green. T-009 (category_ref contract).
 
 
 ## POINTER INDEX

@@ -81,6 +81,13 @@ D-006 · 2026-06-13 · Zod schemas + domain types live in apps/api; NO packages/
   infra only when ≥2 real consumers exist. Avoids premature monorepo machinery.
   Revisit-if: S8 (checkout) or S20 (admin) needs client-side schema reuse → extract then.
   Decided-by: human decision, Fable concurred (resolves PE review finding X1).
+D-007 · 2026-06-14 · Google sign-in only; login required at checkout (S8); NO guest checkout.
+  Why: guest checkout conflicts with customers.id==auth uid (orders.customer_id FK, tracking,
+  loyalty, RLS all assume an authed identity). Browse+cart already anonymous, so friction is
+  low; accounts drive the repeat-business loyalty is built for. Phone OTP/email/guest = later.
+  Revisit-if: owner wants guest checkout → its own session, design nullable customer_id or
+  shadow-row model + tracking/loyalty/RLS adaptations first.
+  Decided-by: human decision (Option A), Fable flagged the conflict + recommended it.
 
 ---
 
@@ -99,18 +106,19 @@ C-03 · Kitchen progression model (preparing→ready driver): callback vs KDS-ta
 ---
 
 ## 6. CURRENT STATE  (the ONLY fully-rewritten section — ≤10 lines)
-- Phase B (Menu + Cart) IN PROGRESS. Sessions: S1, S2, S2A, S3, S4, S5 all MERGED. Next:
-  Session 6 (auth — Supabase OTP + Google login; customers.id == auth uid per D-004).
-- main clean + pushed. CI green on Node 22 — BOTH api + web jobs now run. Full menu page LIVE
-  (server-component, consumes /api/menu) + in-memory cart (drawer/sheet/bar). Human-tested
-  desktop + mobile.
+- Phase B (Menu + Cart) effectively COMPLETE: S1, S2, S2A, S3, S4, S5, S6 all MERGED. Next:
+  Session 7 — order creation (POST /api/orders: validate, server-side pricing, idempotency
+  key, create Razorpay order, status=pending_payment). First money-path session — high review.
+- main clean + pushed. CI green (both jobs). Live: menu API + menu page + cart + Google auth
+  (customers row on login, id==auth uid). Suite 66 (api) + web lint/build.
 - TEAM: SOLO build — Pranav owns backend AND frontend. No Anudeep (earlier context superseded).
-- Prod env: none yet (S14A). CI repo secrets: not added (DB test skips in CI by design).
-- Blockers: PetPooja creds + callback (chase 2026-06-18) · Shadowfax (not started) ·
-  Meta (not started) · Razorpay (test mode on demand) · domain yumyumtree.in not owned (S16).
-- Gate 0: COMPLETE. Debt: T-006/T-007/T-008/T-009/T-010. Risk R-005 (app/DB whitelist lockstep).
-- PROCESS: PowerShell git one line at a time (no && / ||). Branch BEFORE Claude Code.
-  CI on Node 22 is the source of truth.
+- Prod env: none yet (S14A). CI repo secrets not added (DB test skips). RLS still deny-all.
+- Blockers: PetPooja creds + callback (chase 2026-06-18) · Shadowfax (not started) · Meta (not
+  started) · Razorpay (test-mode keys needed for S7 — get from dashboard) · domain not owned (S16).
+- Gate 0: COMPLETE. Debt: T-006..T-010. Risks: R-005 (app/DB whitelist lockstep). D-007 logs
+  the no-guest-checkout decision.
+- PROCESS: PowerShell git one line at a time. `git status` clean-tree check BEFORE each session
+  (S6 opened with a benign working-tree ghost). Branch BEFORE Claude Code. CI Node 22 = truth.
 
 ---
 
@@ -239,10 +247,38 @@ C-03 · Kitchen progression model (preparing→ready driver): callback vs KDS-ta
   desktop + mobile (375px) — menu renders, cart drawer/sheet/bar all work, nothing clipped.
 - frontend-design skill NOT present in workspace — Claude used own design judgment (palette
   came from the logo via prompt). Visual style is Claude's taste, human-approved.
-- Concerns for S6: auth UI needs its own header island (add AuthButton alongside CartButton,
-  don't convert Header to client); guest-cart → logged-in-cart merge behaviour to decide when
-  persistence+auth land; Supabase client not yet wired (NEXT_PUBLIC_SUPABASE_* placeholders
-  already flow through CI build env).
+- PARKED: none.
+
+### Session 6 — Google sign-in (Supabase OAuth) + customer sync  ·  MERGED 2026-06-14
+- Auth CAPABILITY only — nothing is gated in S6 (browse + cart stay anonymous; checkout gate
+  is S8). Google sign-in ONLY (phone OTP / email / guest = "coming soon"). Guest checkout
+  DROPPED for now (conflicts with customers.id==auth uid; revisit as its own session if owner
+  wants it — would need nullable customer_id or shadow-row model). RLS stays DENY-ALL.
+- apps/web: @supabase/ssr (v0.12, getAll/setAll cookie API verified against installed types).
+  lib/supabase/client.ts (browser) + server.ts (server, async cookies()). AuthButton.tsx
+  ('use client' island) rendered ALONGSIDE CartButton — Header stays a server component.
+  app/auth/callback/route.ts (GET): exchangeCodeForSession → best-effort POST to backend sync
+  → redirect home. Open-redirect guard on ?next (relative-only). NO service-role key in web
+  (grep-verified). NO middleware added (deferred — S8 needs it for server-side auth reads).
+- apps/api: POST /api/auth/sync (routes/auth.js) — SECURITY-CRITICAL. Reads Bearer access
+  token, verifies via supabase.auth.getUser(token), derives identity ONLY from the verified
+  user (request body NEVER read for identity). Upserts customers (id=uid, email, name) via
+  service-role (bypasses deny-all). 401 UNAUTHENTICATED on missing/invalid token; 502
+  CUSTOMER_SYNC_FAILED on upsert error. Idempotent (safe to re-run every login).
+- Tests: auth.test.js — 4 (no header→401; invalid token→401; valid token→200 with upsert
+  using TOKEN identity while a spoofed body id/email is proven IGNORED; upsert error→502).
+  Suite 66 green. web lint + build pass (/auth/callback route emitted).
+- Verified by human: real Google login works (header updates, customers row created with
+  id==auth uid — D-004 confirmed live); BOTH forge attempts (no token / fake token+attacker
+  body) returned 401 with NO attacker row created; re-login idempotent (no duplicate row).
+- INCIDENT (benign): session opened with an uncommitted local edit to app.js that had deleted
+  the /api/menu mount (working-tree ghost only — main always had it; git diff main confirmed
+  the mount line unchanged vs main). Claude restored it while adding the auth mount. No code/
+  repo damage. PROCESS REMINDER reinforced: run `git status` to confirm a clean tree BEFORE
+  starting each session (handbook Stage 1 already requires this).
+- Concerns for S7/S8: add @supabase/ssr middleware when server-side auth reads are first
+  needed (S8 checkout gate); RLS read policies for customer-owned rows land at S11; surface
+  the ?auth=error callback state as a toast in a later UI pass.
 - PARKED: none.
 
 ---
