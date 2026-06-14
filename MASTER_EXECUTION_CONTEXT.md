@@ -99,17 +99,17 @@ C-03 · Kitchen progression model (preparing→ready driver): callback vs KDS-ta
 ---
 
 ## 6. CURRENT STATE  (the ONLY fully-rewritten section — ≤10 lines)
-- Phase A (Foundation) COMPLETE: S1, S2, S2A, S3 all MERGED. Next: Phase B begins — Session 4
-  (Menu API + mock PetPooja menu, first real route + GET /api/menu).
-- main clean + pushed (b6b75c2). CI green on Node 22. Full suite 52 tests. Backend platform +
-  domain core (state machine mirror, strict Zod schemas, pure pricing) all live.
+- Phase B (Menu + Cart) IN PROGRESS. Sessions: S1, S2, S2A, S3, S4 all MERGED. Next:
+  Session 5 (frontend menu browse + cart — consumes GET /api/menu; web CI job un-parks here).
+- main clean + pushed (5d1da98). CI green on Node 22. Full suite 62 tests. GET /api/menu LIVE
+  (mock-backed, serves the real YumYumTree menu — 9 cats, 82 items). Provider seam pattern set.
 - Prod env: none yet (S14A). CI repo secrets: not added (DB test skips in CI by design).
 - Blockers: PetPooja creds + callback (chase 2026-06-18) · Shadowfax (not started) ·
   Meta (not started) · Razorpay (test mode on demand) · domain yumyumtree.in not owned (S16).
-- Gate 0: COMPLETE. Debt: T-006 (vitest audit, parked), T-007 (CI action deprecation),
-  T-008 (scheduled_at timezone). Risk R-005 (app/DB whitelist lockstep).
+- Gate 0: COMPLETE. Debt: T-006 (vitest audit), T-007 (CI action deprec.), T-008 (tz),
+  T-009 (menu category_ref contract). Risk R-005 (app/DB whitelist lockstep).
 - PROCESS: PowerShell git one line at a time (no && / ||). Branch BEFORE Claude Code.
-  CI on Node 22 is the source of truth.
+  CI on Node 22 is the source of truth. NEXT: S5 is frontend — web CI job un-parks, Next 16.
 
 ---
 
@@ -189,6 +189,31 @@ C-03 · Kitchen progression model (preparing→ready driver): callback vs KDS-ta
   before scheduling goes live), R-005 (app mirror ⇄ DB RPC whitelist must stay in lockstep).
 - PARKED: none.
 
+### Session 4 — Menu API + mock PetPooja provider seam  ·  MERGED 2026-06-14
+- First real route + first mock-behind-a-flag provider (the template every external
+  integration copies). No DB writes — mock serves a seed; real PetPooja→DB sync is S21.
+- mocks/petpooja/menu.js: the REAL YumYumTree menu seed (owner's actual menu, transcribed
+  from 5 menu photos). 9 categories, 82 items. Half/Full modeled as separate items (owner
+  decision, matches PetPooja). MRP items priced as placeholders (Mineral Water 20, Soft
+  Drinks 40 — editable via PetPooja later). category_ref = parent category's petpooja_id.
+  Addons excluded (C-02); note the menu's own "Extras" section lists Fried Onion/Mayo/Cheese
+  as standalone items — reality validates the C-02 cut.
+- services/petpooja.js: THE SEAM. getMenu() returns seed in mock mode (50-150ms jitter);
+  live mode throws {status:501, code:NOT_IMPLEMENTED} until S21 — never a silent fallback.
+  MODE from config.PETPOOJA_MODE (default 'mock'). Thin getCategories/getItems wrappers.
+- routes/menu.js: GET /api/menu, PUBLIC, asyncHandler. Filtering lives in the ROUTE (service
+  stays a faithful provider mirror): excludes is_active=false categories + their items;
+  KEEPS unavailable items with the flag (frontend renders "sold out"). config.js
+  (PETPOOJA_MODE → OPTIONAL) + app.js (mount after express.json) edited.
+- Tests: menu.test.js (6 integration, incl. a spy-injected inactive-category test that fails
+  on broken code) + petpooja.test.js (4 unit, mock-mode + price spot-checks). Suite 62 green.
+- Verified LIVE: booted server, GET /api/menu returned the full real menu as JSON; prices
+  cross-checked against the menu photos — all correct.
+- Concern logged (T-009): category_ref is the petpooja_id seam; S21's DB version uses
+  category_id (uuid FK). Frontend must group on whatever key §12 exposes — keep category_ref
+  stable or version the contract when S21 swaps to DB-backed reads.
+- PARKED: caching/ISR/Redis on /api/menu; real PetPooja HTTP sync (S21); menu admin/editing.
+
 ---
 
 ## 8. OPEN RISKS  (R-### · risk · likelihood/impact · trigger-to-watch · owner · status)
@@ -225,6 +250,9 @@ T-007 · CI uses actions/checkout@v4 + setup-node@v4 (Node-20 action runtime, de
 T-008 · scheduled_at same-day refine uses server-local time · apps/api/src/schemas/order.js ·
   'later today' could mean wrong day if server isn't IST · repay: before scheduling goes live,
   pin comparison to Asia/Kolkata or ensure server runs IST.
+T-009 · GET /api/menu exposes category_ref (petpooja_id text) · apps/api/src/routes/menu.js ·
+  S21's DB-backed version uses category_id (uuid FK); contract key could shift · repay at S21:
+  keep category_ref stable or version the §12 payload so the frontend grouping doesn't break.
 (more accrue as PARKED items from sessions)
 
 ---
