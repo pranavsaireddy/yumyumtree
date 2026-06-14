@@ -46,28 +46,29 @@ with the owner operating it from the admin dashboard without developer help.
 ---
 
 ## CURRENT STATE (rewritten every session)
-- Phase B (Menu + Cart) IN PROGRESS: S1, S2, S2A, S3, S4 MERGED. Next: Session 5 — frontend
-  menu browse + cart (consumes GET /api/menu; web CI job un-parks here).
-- Live: full DB schema, hardened backend, CI (green, Node 22), domain core, and GET /api/menu
-  (mock-backed, serves the real YumYumTree menu — 9 categories, 82 items). Suite 62 green.
-- Provider-seam pattern established (services/petpooja.js): mock now, DB-backed at S21; live
-  mode throws 501, never silent fallback. Every external integration copies this shape.
+- Phase B (Menu + Cart) IN PROGRESS: S1, S2, S2A, S3, S4, S5 MERGED. Next: Session 6 — auth
+  (Supabase OTP + Google; customers.id == auth uid per D-004).
+- Live: full DB schema, hardened backend, domain core, GET /api/menu (mock-backed), AND the
+  frontend menu page + in-memory cart (server-component menu, client cart islands). Human-
+  tested desktop + mobile.
+- CI green on Node 22 — BOTH api (vitest) + web (lint+build) jobs now run on every push.
+- TEAM: SOLO build — Pranav owns backend and frontend. No Anudeep (earlier context superseded).
 - main clean + pushed. Prod env: not yet (S14A). CI repo secrets not added (DB test skips).
 - External blockers: PetPooja creds + callback (chase 2026-06-18), Shadowfax/Meta (not
   started), Razorpay (test mode on demand), domain not owned (needed before S16).
-- Gate 0: COMPLETE. Debt: T-006/T-007/T-008/T-009. Risk R-005 (app/DB whitelist lockstep).
+- Gate 0: COMPLETE. Debt: T-006..T-010. Risk R-005 (app/DB whitelist lockstep).
 - CI on Node 22 is the source of truth, not local Node 24.
 
 ---
 
 ## RECENT SESSIONS (last 3 — full history in MASTER §7)
-- S4 (MERGED 2026-06-14): Menu API — GET /api/menu (public) + mock PetPooja provider seam
-  (mock now, DB-backed at S21; live throws 501). Real YumYumTree menu seed (9 cats, 82 items).
-  Route owns inactive-category filtering. 10 new tests, suite 62 green. T-009 logged.
+- S5 (MERGED 2026-06-14): FIRST frontend — server-component menu page (consumes /api/menu) +
+  in-memory Zustand cart (desktop drawer, mobile sticky bar + sheet). Navy/gold brand. web CI
+  job un-parked (both jobs green). Subtotal display-only. Human-tested desktop + mobile.
+- S4 (MERGED 2026-06-14): Menu API — GET /api/menu + mock PetPooja provider seam (mock now,
+  DB-backed at S21). Real YumYumTree menu seed (9 cats, 82 items). Suite 62 green. T-009.
 - S3 (MERGED 2026-06-13): domain core — orderStateMachine.js (§7 mirror), strict Zod schemas
   (addons cut C-02), pure computeTotals pricing. 50 unit tests. zod@^3. Schemas in apps/api (D-006).
-- S2A (MERGED 2026-06-13): GitHub Actions CI (Node 22, Vitest). Caught & fixed a Node-20
-  WebSocket bug. apps/web re-scaffolded (Next 16). web CI job parked until S5.
 
 
 ## POINTER INDEX

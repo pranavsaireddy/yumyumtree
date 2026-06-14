@@ -99,17 +99,18 @@ C-03 · Kitchen progression model (preparing→ready driver): callback vs KDS-ta
 ---
 
 ## 6. CURRENT STATE  (the ONLY fully-rewritten section — ≤10 lines)
-- Phase B (Menu + Cart) IN PROGRESS. Sessions: S1, S2, S2A, S3, S4 all MERGED. Next:
-  Session 5 (frontend menu browse + cart — consumes GET /api/menu; web CI job un-parks here).
-- main clean + pushed (5d1da98). CI green on Node 22. Full suite 62 tests. GET /api/menu LIVE
-  (mock-backed, serves the real YumYumTree menu — 9 cats, 82 items). Provider seam pattern set.
+- Phase B (Menu + Cart) IN PROGRESS. Sessions: S1, S2, S2A, S3, S4, S5 all MERGED. Next:
+  Session 6 (auth — Supabase OTP + Google login; customers.id == auth uid per D-004).
+- main clean + pushed. CI green on Node 22 — BOTH api + web jobs now run. Full menu page LIVE
+  (server-component, consumes /api/menu) + in-memory cart (drawer/sheet/bar). Human-tested
+  desktop + mobile.
+- TEAM: SOLO build — Pranav owns backend AND frontend. No Anudeep (earlier context superseded).
 - Prod env: none yet (S14A). CI repo secrets: not added (DB test skips in CI by design).
 - Blockers: PetPooja creds + callback (chase 2026-06-18) · Shadowfax (not started) ·
   Meta (not started) · Razorpay (test mode on demand) · domain yumyumtree.in not owned (S16).
-- Gate 0: COMPLETE. Debt: T-006 (vitest audit), T-007 (CI action deprec.), T-008 (tz),
-  T-009 (menu category_ref contract). Risk R-005 (app/DB whitelist lockstep).
+- Gate 0: COMPLETE. Debt: T-006/T-007/T-008/T-009/T-010. Risk R-005 (app/DB whitelist lockstep).
 - PROCESS: PowerShell git one line at a time (no && / ||). Branch BEFORE Claude Code.
-  CI on Node 22 is the source of truth. NEXT: S5 is frontend — web CI job un-parks, Next 16.
+  CI on Node 22 is the source of truth.
 
 ---
 
@@ -214,6 +215,36 @@ C-03 · Kitchen progression model (preparing→ready driver): callback vs KDS-ta
   stable or version the contract when S21 swaps to DB-backed reads.
 - PARKED: caching/ISR/Redis on /api/menu; real PetPooja HTTP sync (S21); menu admin/editing.
 
+### Session 5 — Frontend menu browse + cart (display-only)  ·  MERGED 2026-06-14
+- FIRST frontend session. All in apps/web (Next 16 App Router, TS, Tailwind v4). web CI job
+  UN-PARKED — both api + web jobs now green on every push.
+- Server/client boundary (the key thing, done right): menu page + layout + Header +
+  MenuItemCard + VegBadge + lib/menu.ts are SERVER components (server-side fetch of GET
+  /api/menu with cache:'no-store'; no useEffect, no client menu fetch). Client islands
+  ('use client'): store/cart.ts, store/cart-ui.ts, AddToCartButton, CartButton, CartPanel,
+  CartBar.
+- lib/menu.ts: typed getMenu() returns null on any failure (API-down → friendly "menu
+  temporarily unavailable", never crashes render); toSections() groups flat items by
+  category_ref + sorts; formatPrice() (₹, en-IN grouping).
+- Cart: in-memory Zustand, NO persistence (vanishes on refresh — correct for S5). Per-card
+  Add swaps to −/qty/+ stepper. Desktop right-side drawer; mobile sticky bottom bar (only when
+  non-empty) → slide-up sheet. SUBTOTAL IS DISPLAY-ONLY (commented in store + UI); cart holds/
+  sends no authoritative price; checkout is a disabled stub. Authoritative total = server-side
+  at checkout (later session sends item_id+quantity, never price).
+- Brand: navy #0A1A3F + gold #D4AF37 chrome over cream #F5F0E6 menu body; palette as Tailwind
+  v4 @theme tokens. Logo at apps/web/public/logo.png (239×240 — low-res screenshot, see T-010).
+- Tailwind v4 gotcha caught & fixed: runtime-built class names (border-${color}) aren't
+  scanned — VegBadge rewritten with literal class strings.
+- Verified by human: lint clean, build green, both CI jobs green, AND personally tested
+  desktop + mobile (375px) — menu renders, cart drawer/sheet/bar all work, nothing clipped.
+- frontend-design skill NOT present in workspace — Claude used own design judgment (palette
+  came from the logo via prompt). Visual style is Claude's taste, human-approved.
+- Concerns for S6: auth UI needs its own header island (add AuthButton alongside CartButton,
+  don't convert Header to client); guest-cart → logged-in-cart merge behaviour to decide when
+  persistence+auth land; Supabase client not yet wired (NEXT_PUBLIC_SUPABASE_* placeholders
+  already flow through CI build env).
+- PARKED: none.
+
 ---
 
 ## 8. OPEN RISKS  (R-### · risk · likelihood/impact · trigger-to-watch · owner · status)
@@ -253,6 +284,9 @@ T-008 · scheduled_at same-day refine uses server-local time · apps/api/src/sch
 T-009 · GET /api/menu exposes category_ref (petpooja_id text) · apps/api/src/routes/menu.js ·
   S21's DB-backed version uses category_id (uuid FK); contract key could shift · repay at S21:
   keep category_ref stable or version the §12 payload so the frontend grouping doesn't break.
+T-010 · Logo is a 239×240 low-res screenshot · apps/web/public/logo.png · fine at header size
+  but not for larger use / retina · repay: get original high-res (SVG ideal) from owner, drop
+  in as logo.png — nothing else changes.
 (more accrue as PARKED items from sessions)
 
 ---
