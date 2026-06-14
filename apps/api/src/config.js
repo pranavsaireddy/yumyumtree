@@ -11,6 +11,7 @@ const VALID_APP_ENVS = ['development', 'test', 'production'];
 // Architecture §11 — read as optional this session; one warning lists any that are absent.
 const OPTIONAL = [
   'DATABASE_URL',
+  'PETPOOJA_MODE',
   'RAZORPAY_KEY_SECRET',
   'RAZORPAY_WEBHOOK_SECRET',
   'PETPOOJA_API_KEY',
@@ -60,6 +61,9 @@ const config = Object.freeze({
   SUPABASE_SERVICE_ROLE_KEY: process.env.SUPABASE_SERVICE_ROLE_KEY,
   APP_ENV: process.env.APP_ENV,
   NODE_ENV: process.env.NODE_ENV,
+  // External-provider mode flag (the template every partner copies). Optional, defaults
+  // to 'mock' at the consuming service since PetPooja creds don't exist yet (real sync = S21).
+  PETPOOJA_MODE: process.env.PETPOOJA_MODE,
 });
 
 // Safe to require the logger now that config is valid (logger reads only APP_ENV, no cycle).

@@ -23,6 +23,9 @@ app.use(cors({ origin: config.FRONTEND_URL }));
 
 app.use(express.json());
 
+// Non-webhook API routes mount AFTER express.json. /api/menu is public (no auth) — §12.
+app.use('/api/menu', require('./routes/menu'));
+
 app.get('/health', (req, res) => {
   res.status(200).json({ status: 'ok', project: 'YumYumTree API' });
 });
