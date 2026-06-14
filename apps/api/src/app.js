@@ -27,6 +27,8 @@ app.use(express.json());
 app.use('/api/menu', require('./routes/menu'));
 // POST /api/auth/sync — upserts the customers row after a verified Supabase login (S6, D-004).
 app.use('/api/auth', require('./routes/auth'));
+// POST /api/orders — create a pending_payment order (auth required, server-side pricing, S7).
+app.use('/api/orders', require('./routes/orders'));
 
 app.get('/health', (req, res) => {
   res.status(200).json({ status: 'ok', project: 'YumYumTree API' });

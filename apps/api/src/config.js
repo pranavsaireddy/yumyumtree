@@ -12,6 +12,7 @@ const VALID_APP_ENVS = ['development', 'test', 'production'];
 const OPTIONAL = [
   'DATABASE_URL',
   'PETPOOJA_MODE',
+  'RAZORPAY_MODE',
   'RAZORPAY_KEY_SECRET',
   'RAZORPAY_WEBHOOK_SECRET',
   'PETPOOJA_API_KEY',
@@ -64,6 +65,10 @@ const config = Object.freeze({
   // External-provider mode flag (the template every partner copies). Optional, defaults
   // to 'mock' at the consuming service since PetPooja creds don't exist yet (real sync = S21).
   PETPOOJA_MODE: process.env.PETPOOJA_MODE,
+  // Razorpay mode flag — same seam pattern. Optional; the razorpay service defaults to
+  // 'mock' since TEST-MODE keys aren't wired yet. 'live' is a hard 501 until the real
+  // integration session.
+  RAZORPAY_MODE: process.env.RAZORPAY_MODE,
 });
 
 // Safe to require the logger now that config is valid (logger reads only APP_ENV, no cycle).
