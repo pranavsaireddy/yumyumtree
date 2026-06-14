@@ -106,19 +106,22 @@ C-03 · Kitchen progression model (preparing→ready driver): callback vs KDS-ta
 ---
 
 ## 6. CURRENT STATE  (the ONLY fully-rewritten section — ≤10 lines)
-- Phase B (Menu + Cart) effectively COMPLETE: S1, S2, S2A, S3, S4, S5, S6 all MERGED. Next:
-  Session 7 — order creation (POST /api/orders: validate, server-side pricing, idempotency
-  key, create Razorpay order, status=pending_payment). First money-path session — high review.
-- main clean + pushed. CI green (both jobs). Live: menu API + menu page + cart + Google auth
-  (customers row on login, id==auth uid). Suite 66 (api) + web lint/build.
-- TEAM: SOLO build — Pranav owns backend AND frontend. No Anudeep (earlier context superseded).
-- Prod env: none yet (S14A). CI repo secrets not added (DB test skips). RLS still deny-all.
-- Blockers: PetPooja creds + callback (chase 2026-06-18) · Shadowfax (not started) · Meta (not
-  started) · Razorpay (test-mode keys needed for S7 — get from dashboard) · domain not owned (S16).
-- Gate 0: COMPLETE. Debt: T-006..T-010. Risks: R-005 (app/DB whitelist lockstep). D-007 logs
-  the no-guest-checkout decision.
-- PROCESS: PowerShell git one line at a time. `git status` clean-tree check BEFORE each session
-  (S6 opened with a benign working-tree ghost). Branch BEFORE Claude Code. CI Node 22 = truth.
+- Phase B (Menu+Cart) + auth COMPLETE. Sessions S1–S7 all MERGED. Phase C (payments) begins.
+  Next: Session 8 — checkout UI + flow (frontend cart → POST /api/orders → Razorpay checkout;
+  the login-required-at-checkout gate from D-007; needs @supabase/ssr middleware for server auth).
+- main clean + pushed (e2fa8b0). CI green (both jobs). 80 api tests. Live: menu API + page +
+  cart + Google auth + ORDER CREATION (money-path verified end-to-end against real DB).
+- DB now SEEDED: menu_categories (9) + menu_items (88) loaded via seedMenu.js. Migration 006
+  (place_order RPC) applied to DEV.
+- TEAM: SOLO build — Pranav owns backend AND frontend. No Anudeep.
+- Prod env: none yet (S14A). CI repo secrets not added. RLS still deny-all (read policies S11).
+- Blockers: PetPooja creds+callback (chase 2026-06-18) · Shadowfax (not started) · Meta (not
+  started) · Razorpay TEST-MODE keys (needed for real-Razorpay session; stub works for now) ·
+  domain not owned (S16).
+- Gate 0 COMPLETE. Debt T-006..T-011 (T-011 = idempotency race, revisit at real-Razorpay).
+  Risk R-005 (app/DB whitelist lockstep). D-007 = no guest checkout.
+- PROCESS: PowerShell git one line at a time. `git status` clean-tree check BEFORE each session.
+  Supabase session is in COOKIES not localStorage. Branch BEFORE Claude Code. CI Node 22 = truth.
 
 ---
 
@@ -281,6 +284,41 @@ C-03 · Kitchen progression model (preparing→ready driver): callback vs KDS-ta
   the ?auth=error callback state as a toast in a later UI pass.
 - PARKED: none.
 
+### Session 7 — Order creation (POST /api/orders) + menu seed  ·  MERGED 2026-06-14
+- FIRST MONEY-PATH session. Part A (seed) + Part B (order creation), all apps/api.
+- Part A — scripts/seedMenu.js (manual, human-run): upserts the S4 mock menu into the DEV DB
+  (menu_categories + menu_items), mapping category_ref(text) → category_id(uuid FK). Idempotent
+  on UNIQUE petpooja_id. RAN by human: 9 categories, 88 items, 0 null category_id, stable on
+  re-run. Resolves T-009.
+- Part B — POST /api/orders (routes/orders.js). The four money-path guarantees, all verified
+  LIVE against the real DB:
+  1. TOTAL server-side only — fetches menu_items by uuid id, computeTotals (S3); client price
+     rejected by strict schema (verified: body price:1 → 422 "Unrecognized key 'price'").
+  2. IDENTITY from verified token only — getUser(token)→uid as customer_id; body customer_id
+     rejected by strict schema. No token → 401 (both verified live).
+  3. IDEMPOTENCY by DB constraint — place_order RPC (migration 006) ON CONFLICT(idempotency_key)
+     DO NOTHING + a route pre-check; replay returns SAME order, one Razorpay order (verified
+     live: same order_id + razorpay_order_id on second call, one DB row).
+  4. ATOMICITY — order + order_items in one place_order txn; order_items snapshot name+price (§6).
+- Razorpay STUB (services/razorpay.js, RAZORPAY_MODE default mock) — fake order_mock_* in mock,
+  501 in live (real API a later session). amount in PAISE only at this edge; DB in rupees.
+- discount=0, total=subtotal (loyalty=S17; loyalty_points_to_redeem>0 → 422).
+- 80 tests green (+14: 11 orders integration, 3 razorpay unit). Migration 006 + seed run by
+  human in Supabase (see Deployment History). Verified live order be0ee15c… customer_id=auth
+  uid 88ebbf16…, total 998, order_items price snapshot 499×2.
+- DEBT logged T-011: idempotency race — concurrent same-key submits can both pass the route
+  pre-check and each create a Razorpay order before place_order collapses them to one DB order
+  (one orphaned UNPAID Razorpay order; DB never double-orders; reconcile §30 sweeps it).
+  Accepted for S7 (orphan is a free mock object today); revisit at the real-Razorpay session.
+- DETOUR (resolved, no code impact): S7 manual test initially used a stale localStorage token
+  (test1/id:35) — inert leftover keys; the real Supabase session lives in cookies
+  (sb-…-auth-token, chunked .0/.1), not localStorage. S6 auth was fine all along.
+- Concerns for S8/S9: S8 frontend generates idempotency_key per attempt, consumes
+  {order_id, razorpay_order_id, amount(paise), currency}; add @supabase/ssr middleware when S8
+  needs server-side auth. S9 (payment webhook) uses confirm_order (005), handles lost-webhook +
+  orphan via reconcile.
+- PARKED: none.
+
 ---
 
 ## 8. OPEN RISKS  (R-### · risk · likelihood/impact · trigger-to-watch · owner · status)
@@ -323,6 +361,11 @@ T-009 · GET /api/menu exposes category_ref (petpooja_id text) · apps/api/src/r
 T-010 · Logo is a 239×240 low-res screenshot · apps/web/public/logo.png · fine at header size
   but not for larger use / retina · repay: get original high-res (SVG ideal) from owner, drop
   in as logo.png — nothing else changes.
+T-011 · Order-creation idempotency race · apps/api/src/routes/orders.js · concurrent same-key
+  submits can each create a Razorpay order before place_order collapses to one DB order (one
+  orphaned UNPAID Razorpay order; DB never double-orders; reconcile §30 sweeps). Accepted S7
+  (mock orphan is free) · repay: at real-Razorpay session, create the Razorpay order AFTER the
+  DB insert (insert pending_payment → create rzp order → update row) so a race makes zero orphans.
 (more accrue as PARKED items from sessions)
 
 ---
@@ -350,6 +393,9 @@ T-010 · Logo is a 239×240 low-res screenshot · apps/web/public/logo.png · fi
 ---
 
 ## 12. DEPLOYMENT HISTORY  (append-only: date · sha · sessions · migrations · smoke · rollbacks)
+- 2026-06-14 · DEV DB (no prod yet) · S7 · ran migration 006_place_order.sql in Supabase SQL
+  editor + executed scripts/seedMenu.js (9 categories, 88 items loaded into menu_categories/
+  menu_items). Verified: live order created end-to-end. No prod deploy (prod env = S14A).
 (none yet — first deploy is Session 15)
 
 ---
