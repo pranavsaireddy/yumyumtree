@@ -1,0 +1,25 @@
+@import "tailwindcss";
+
+/* YumYumTree brand palette — navy + gold reserved for chrome (header, cart);
+   cream/white body so the menu reads bright and scannable. Exposed as Tailwind
+   theme tokens, so utilities like bg-navy / text-gold / bg-cream are available. */
+@theme {
+  --color-navy: #0a1a3f;
+  --color-gold: #d4af37;
+  --color-gold-dim: #c9a227;
+  --color-cream: #f5f0e6;
+  --color-charcoal: #1a1a1a;
+
+  --color-veg: #0a8a0a;
+  --color-nonveg: #b91c1c;
+}
+
+@theme inline {
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+body {
+  background: var(--color-cream);
+  color: var(--color-charcoal);
+}
