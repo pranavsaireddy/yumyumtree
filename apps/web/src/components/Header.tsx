@@ -2,6 +2,7 @@
 // only the <CartButton /> island inside is client-side.
 
 import Image from "next/image";
+import AuthButton from "@/components/AuthButton";
 import CartButton from "@/components/CartButton";
 
 export default function Header() {
@@ -26,7 +27,10 @@ export default function Header() {
             </p>
           </div>
         </div>
-        <CartButton />
+        <div className="flex items-center gap-2 sm:gap-3">
+          <AuthButton />
+          <CartButton />
+        </div>
       </div>
     </header>
   );
