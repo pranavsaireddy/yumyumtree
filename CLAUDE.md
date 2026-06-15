@@ -46,35 +46,36 @@ with the owner operating it from the admin dashboard without developer help.
 ---
 
 ## CURRENT STATE (rewritten every session)
-- Phase C (payments) in progress. S1–S8 MERGED. Next: Session 9 — payment webhook
-  (POST /payments/webhook: Razorpay HMAC verify on RAW body, processed_webhooks dedupe,
-  confirm_order RPC pending_payment→placed, outbox; reconcile for lost-webhook/orphan).
-  FIRST WEBHOOK + money-path — high review (raw-body-before-json, timing-safe verify).
-- Live + verified end-to-end: menu (DB-backed) + cart (PERSISTED) + Google auth + order creation
-  + DELIVERY CHECKOUT. Customer journey works: browse→cart→checkout→sign-in→pending_payment order.
-  Payment stubbed (Razorpay mock; modal + webhook = S9). 81 api tests, both CI jobs green.
-- GET /api/menu reads DB (exposes uuid id). Cart persisted (zustand persist, yyt-cart v1).
+- Phase C (payments) — MONEY LOOP CLOSED. S1–S9 MERGED. Customer can browse → cart → checkout →
+  pay → order confirms (pending_payment→placed). Next: OUTBOX DRAIN + side-effect workers arc
+  (pg-boss → PetPooja KOT / notifications / Shadowfax) — a placed order is INERT until then.
+  Confirm exact next session # against roadmap at Prep.
+- Live + verified end-to-end: menu (DB) + cart (persisted) + Google auth + order creation +
+  delivery checkout + PAYMENT WEBHOOK (real HMAC, timing-safe, confirm_order). 89 api tests,
+  both CI jobs green. Frontend still shows "payment coming soon" (no Razorpay modal yet).
+- ⚠️ TWO BEFORE-LAUNCH debts: T-014 (reconcile cron — lost webhook = stuck order) + T-015
+  (outbox drain — placed orders inert until pg-boss workers exist). Both block go-live, not building.
 - TEAM: SOLO build — Pranav owns backend and frontend. No Anudeep.
-- main clean + pushed. Prod env: not yet (S14A). RLS still deny-all (read policies S11).
-- Blockers: PetPooja creds+callback (chase 2026-06-18), Shadowfax/Meta (not started), Razorpay
-  TEST-MODE keys (NEEDED for S9 webhook signature testing), domain not owned (S16).
-- Gate 0 COMPLETE. Debt T-006..T-013 (T-009 resolved). Risk R-005. D-007 no guest.
+- main clean + pushed (7022a94). Prod env: not yet (S14A). RLS still deny-all (read policies S11).
+- Blockers: PetPooja creds+callback (chase 2026-06-18, now critical-path for KOT), Shadowfax/Meta
+  (not started), domain not owned (S16). Razorpay test keys: HELD (local .env).
+- Gate 0 COMPLETE. Debt T-006..T-015 (T-009 resolved). Risk R-005. D-007 no guest.
 - Supabase session in COOKIES not localStorage. On money path verify the DB ROW, not just UI.
   `git status` clean-tree check before each session. CI on Node 22 is the source of truth.
 
 ---
 
 ## RECENT SESSIONS (last 3 — full history in MASTER §7)
+- S9 (MERGED 2026-06-15): Razorpay payment webhook (POST /payments/webhook). FIRST webhook +
+  2nd money-path. express.raw before express.json, HMAC-SHA256 timing-safe verify; payment.captured
+  → confirm_order (mig 005, first caller) pending_payment→placed + events/outbox; 3-layer
+  idempotency; amount check. 89 tests (real in-test HMAC). Verified live: confirm/replay/bad-sig/
+  mismatch. Debt T-014 (reconcile) + T-015 (outbox drain) — both BEFORE LAUNCH.
 - S8 (MERGED 2026-06-15): menu API DB-read (exposes uuid id; resolves T-009) + delivery checkout.
-  /checkout client page: login gate (D-007), address form (placeholder lat-lng), Place Order →
-  POST /api/orders (item_id+quantity only). Cart now PERSISTED (zustand persist, survives OAuth
-  redirect). Stops at order creation (Razorpay modal+webhook=S9). Verified live end-to-end.
-  Debt T-012 (geocoding), T-013 (ssr middleware).
-- S7 (MERGED 2026-06-14): FIRST money-path — POST /api/orders (pending_payment). Server-side
-  pricing, idempotency by DB constraint (place_order RPC, mig 006), Razorpay stub. seedMenu.js
-  loaded 9 cats/88 items. Verified live: tamper-422, idempotent-replay. T-011 debt.
-- S6 (MERGED 2026-06-14): Google sign-in (Supabase OAuth). /api/auth/sync verifies token,
-  upserts customers (id==auth uid). D-007 no guest. Session lives in cookies, not localStorage.
+  /checkout client page, login gate, Place Order → POST /api/orders. Cart PERSISTED (survives
+  OAuth redirect). Stops at order creation. Debt T-012 (geocoding), T-013 (ssr middleware).
+- S7 (MERGED 2026-06-14): FIRST money-path — POST /api/orders. Server-side pricing, idempotency
+  by DB constraint (place_order RPC, mig 006), Razorpay stub. seedMenu loaded 9 cats/88 items. T-011.
 
 
 ## POINTER INDEX

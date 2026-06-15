@@ -106,22 +106,23 @@ C-03 · Kitchen progression model (preparing→ready driver): callback vs KDS-ta
 ---
 
 ## 6. CURRENT STATE  (the ONLY fully-rewritten section — ≤10 lines)
-- Phase C (payments) in progress. S1–S8 all MERGED. Next: Session 9 — payment webhook
-  (POST /payments/webhook: verify Razorpay HMAC on raw body, processed_webhooks dedupe,
-  confirm_order RPC (already in mig 005) pending_payment→placed, outbox; + reconcile for
-  lost-webhook/orphan). FIRST WEBHOOK + second money-path session — high review.
-- main clean + pushed (4cdb2e0). CI green (both jobs). 81 api tests. Live + verified end-to-end:
-  menu (DB-backed) + cart (persisted) + Google auth + order creation + DELIVERY CHECKOUT UI.
-- Customer journey works: browse → cart → checkout → sign-in gate → order in pending_payment.
-  Payment itself is stubbed (Razorpay mock; modal + webhook = S9).
+- Phase C (payments) — MONEY LOOP CLOSED. S1–S9 MERGED. A customer can browse → cart → checkout
+  → pay → order confirms (pending_payment→placed). Next: the OUTBOX DRAIN + side-effect workers
+  arc (pg-boss → PetPooja KOT / notifications / Shadowfax) — a placed order is currently INERT
+  (outbox row written, nothing drains it). Confirm exact next session # against roadmap at Prep.
+- main clean + pushed (7022a94). CI green (both jobs). 89 api tests. Live + verified end-to-end:
+  menu (DB) + cart (persisted) + Google auth + order creation + delivery checkout + PAYMENT
+  WEBHOOK (real HMAC, confirm_order). Frontend still shows "payment coming soon" (no Razorpay modal).
 - TEAM: SOLO build — Pranav owns backend AND frontend. No Anudeep.
 - Prod env: none yet (S14A). CI repo secrets not added. RLS still deny-all (read policies S11).
-- Blockers: PetPooja creds+callback (chase 2026-06-18) · Shadowfax (not started) · Meta (not
-  started) · Razorpay TEST-MODE keys (NEEDED for S9 webhook signature testing) · domain (S16).
-- Gate 0 COMPLETE. Debt T-006..T-013 (T-009 resolved). Risk R-005. D-007 no guest checkout.
+- ⚠️ TWO BEFORE-LAUNCH debts born this session: T-014 (reconcile cron — lost webhook = stuck
+  order) and T-015 (outbox drain — placed orders are inert until workers exist). Neither blocks
+  more building, both block go-live.
+- Blockers: PetPooja creds+callback (chase 2026-06-18 — now on the critical path for KOT) ·
+  Shadowfax (not started) · Meta (not started) · domain not owned (S16). Razorpay test keys: HELD.
+- Gate 0 COMPLETE. Debt T-006..T-015 (T-009 resolved). Risk R-005. D-007 no guest checkout.
 - PROCESS: PowerShell git one line at a time. `git status` clean-tree check before each session.
-  Supabase session in COOKIES not localStorage. On money path: verify the DB ROW, not just the UI.
-  Branch BEFORE Claude Code. CI Node 22 = truth.
+  Supabase session in COOKIES. On money path verify the DB ROW, not just UI. CI Node 22 = truth.
 
 ---
 
@@ -357,6 +358,47 @@ C-03 · Kitchen progression model (preparing→ready driver): callback vs KDS-ta
   (server-side race) still stands; client-side gate is UX not security (server still enforces).
 - PARKED: none.
 
+### Session 9 — Razorpay payment webhook (POST /payments/webhook)  ·  MERGED 2026-06-15
+- FIRST WEBHOOK + SECOND money-path. apps/api only. Real Razorpay HMAC verification (test keys
+  in .env). The money loop now closes: customer pays → order confirms.
+- SECURITY (all verified live): express.raw({type:'application/json'}) mounted BEFORE
+  express.json() on /payments/webhook (gotcha #1) — handler verifies HMAC-SHA256 over the raw
+  Buffer, JSON.parses only AFTER. Timing-safe compare (crypto.timingSafeEqual, length-guarded).
+  Missing/invalid signature → 400 INVALID_SIGNATURE, nothing downstream runs (only pre-verify
+  failures are 4xx; every post-verify outcome is 200 so Razorpay stops retrying).
+- razorpay.verifyWebhookSignature(rawBody, signature, secret) added — runs in BOTH mock+live
+  (security is real regardless of createOrder's mode); createOrder seam + its tests untouched.
+- FLOW: payment.captured → dedup (processed_webhooks pre-check) → lookup order by
+  razorpay_order_id → AMOUNT CHECK (payment.amount paise == round(order.total×100)) → confirm_order.
+  Non-captured event / orphan order / amount mismatch → 200 ack, NOT confirmed (logged/flagged).
+- confirm_order (mig 005) wired for the FIRST TIME — Step 0 of the prompt had Claude READ it and
+  confirm param/dedup/guard MATCH before wiring (it matched exactly; param table in exit report).
+  R-005 respected: route's layer-1 dedup keys on (source, event_id=payment.id, event_type), the
+  SAME key confirm_order guards on internally — no divergent second path.
+- Three-layer idempotency (§8): (1) processed_webhooks pre-check → 200 already_processed,
+  (2) confirm_order IF EXISTS + status='pending_payment' guard, (3) UNIQUE(source,event_id,
+  event_type). Replay flips state AT MOST once.
+- Tests: webhook.test.js — 8 (wrong sig→400/no-call; missing header→400; TAMPERED-after-signing
+  →400 proving verify is over raw bytes; valid captured→confirm_order once w/ exact params;
+  replay→already_processed/no 2nd call; amount mismatch→not confirmed; orphan→200 no-op;
+  payment.failed→200 ignored). Signatures are REAL in-test HMACs — verifier never mocked. 89
+  green (+8). Test detour: supertest re-serializes a Buffer body under JSON content-type and
+  corrupts signed bytes → send JSON as a STRING (superagent leaves strings untouched).
+- Verified LIVE against real DB (order 97b3c311…): happy path flipped pending_payment→placed,
+  stored razorpay_payment_id (pay_test_s9_001), wrote payment_confirmed event + order.placed
+  outbox row + processed_webhooks row; replay→already_processed (no 2nd change); bad sig→
+  INVALID_SIGNATURE (no DB change); amount mismatch→amount_mismatch (unchanged).
+- DEBT logged: T-014 (RECONCILE CRON — BEFORE LAUNCH: lost/orphan/amount-mismatch webhooks are
+  only logged, no sweep → a lost webhook leaves an order stuck in pending_payment forever).
+  T-015 (OUTBOX DRAIN — BEFORE LAUNCH: confirm_order writes the order.placed outbox row but
+  NOTHING drains it yet → no pg-boss workers, so KOT/notify/dispatch never fire; a placed order
+  is currently INERT — the kitchen never hears about it).
+- Concerns ahead: the next big arc is the outbox drain + side-effect workers (pg-boss → PetPooja
+  KOT, notifications, Shadowfax dispatch) — that's where a placed order actually reaches the
+  restaurant. T-011 (order-creation race) still stands. No frontend Razorpay modal yet (checkout
+  still shows "payment coming soon"; wiring the real modal is its own concern).
+- PARKED: none.
+
 ---
 
 ## 8. OPEN RISKS  (R-### · risk · likelihood/impact · trigger-to-watch · owner · status)
@@ -412,6 +454,15 @@ T-013 · Checkout login gate is client-side only · apps/web/src/app/checkout/pa
   is UX, not security (server still enforces auth via Bearer + prices server-side), but server
   components can't read auth reliably without @supabase/ssr middleware · repay: add the middleware
   when a real server-side wall / protected route is needed (deferred since S6).
+T-014 · ⚠️ BEFORE LAUNCH · Reconcile cron not built · webhook (routes/payments.js) only LOGS
+  orphan / amount-mismatch / and cannot catch a LOST webhook · a captured payment whose webhook
+  never arrives leaves the order stuck in pending_payment forever (customer charged, no order
+  progresses) · repay: build the §30 reconcile sweep (poll Razorpay for recent captures, find
+  any without a placed order, flag for manual review) as its own session BEFORE go-live.
+T-015 · ⚠️ BEFORE LAUNCH · Outbox drain not built · confirm_order writes the order.placed outbox
+  row but NOTHING reads it · no pg-boss workers exist yet, so KOT (PetPooja) / notifications /
+  delivery dispatch (Shadowfax) never fire — a placed order is currently INERT (kitchen never
+  hears it) · repay: outbox drain loop + pg-boss side-effect workers (the next major arc).
 (more accrue as PARKED items from sessions)
 
 ---
@@ -445,6 +496,10 @@ T-013 · Checkout login gate is client-side only · apps/web/src/app/checkout/pa
 - 2026-06-15 · DEV (no prod yet) · S8 · no schema/migration change. GET /api/menu now reads the
   DB (data already seeded in S7). Live end-to-end checkout verified (order 97b3c311). No prod
   deploy (prod env = S14A).
+- 2026-06-15 · DEV (no prod yet) · S9 · no schema/migration change (confirm_order already in mig
+  005). Payment webhook live; confirm_order called for the first time. Verified live: order
+  97b3c311 pending_payment→placed via signed webhook. Razorpay test keys + webhook secret in
+  local .env only. No prod deploy (prod env = S14A).
 (none yet — first deploy is Session 15)
 
 ---
