@@ -17,7 +17,8 @@ app.use(cors({ origin: config.FRONTEND_URL }));
 // mount express.raw({ type: 'application/json' }) and sit BEFORE the global json parser
 // below. Routers are added in their own sessions; placeholders kept here intentionally:
 //
-// app.use('/payments/webhook', express.raw({ type: 'application/json' }), require('./routes/payments'));
+// Razorpay payment webhook (S9): express.raw so the HMAC verify sees the exact signed bytes.
+app.use('/payments/webhook', express.raw({ type: 'application/json' }), require('./routes/payments'));
 // app.use('/delivery/webhook', express.raw({ type: 'application/json' }), require('./routes/delivery'));
 // ──────────────────────────────────────────────────────────────────────────────
 

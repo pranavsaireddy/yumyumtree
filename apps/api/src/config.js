@@ -69,6 +69,10 @@ const config = Object.freeze({
   // 'mock' since TEST-MODE keys aren't wired yet. 'live' is a hard 501 until the real
   // integration session.
   RAZORPAY_MODE: process.env.RAZORPAY_MODE,
+  // Razorpay secrets. Optional this session (CI has no secret); the webhook handler warns
+  // and rejects every signature if RAZORPAY_WEBHOOK_SECRET is absent. NEVER logged.
+  RAZORPAY_KEY_SECRET: process.env.RAZORPAY_KEY_SECRET,
+  RAZORPAY_WEBHOOK_SECRET: process.env.RAZORPAY_WEBHOOK_SECRET,
 });
 
 // Safe to require the logger now that config is valid (logger reads only APP_ENV, no cycle).
