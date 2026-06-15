@@ -4,6 +4,8 @@
 // desktop and a slide-up SHEET on mobile (positioning switches at md). Always
 // mounted so it can animate; pointer events are disabled while closed.
 
+import { useEffect } from "react";
+import { useRouter } from "next/navigation";
 import { Minus, Plus, ShoppingCart, Trash2, X } from "lucide-react";
 import { formatPrice } from "@/lib/menu";
 import { useCartStore, useCartSubtotal } from "@/store/cart";
@@ -20,8 +22,26 @@ export default function CartPanel() {
   const isOpen = useCartUiStore((s) => s.isOpen);
   const close = useCartUiStore((s) => s.close);
 
+  const router = useRouter();
+
+  // Rehydrate the persisted cart from localStorage once on the client, after mount. The store
+  // uses skipHydration so the server render and first client render stay empty (no hydration
+  // mismatch); this restores the saved cart immediately afterwards. CartPanel is always mounted
+  // in the root layout, so this runs on every route.
+  useEffect(() => {
+    useCartStore.persist.rehydrate();
+  }, []);
+
   const items = Object.values(lines);
   const isEmpty = items.length === 0;
+
+  // Close the cart, then route to checkout. Same handler serves both breakpoints
+  // (this panel is the desktop drawer AND the mobile sheet). The login gate +
+  // address form + order placement all live on /checkout.
+  function goToCheckout() {
+    close();
+    router.push("/checkout");
+  }
 
   return (
     <div
@@ -80,7 +100,7 @@ export default function CartPanel() {
             <ul className="flex-1 divide-y divide-charcoal/10 overflow-y-auto px-4">
               {items.map(({ item, quantity }) => (
                 <li
-                  key={item.petpooja_id}
+                  key={item.id}
                   className="flex items-start justify-between gap-3 py-4"
                 >
                   <div className="min-w-0">
@@ -94,7 +114,7 @@ export default function CartPanel() {
                       <button
                         type="button"
                         aria-label={`Remove one ${item.name}`}
-                        onClick={() => decrementQty(item.petpooja_id)}
+                        onClick={() => decrementQty(item.id)}
                         className="flex h-6 w-6 items-center justify-center rounded-full text-gold transition-colors hover:bg-white/10"
                       >
                         <Minus size={16} />
@@ -105,7 +125,7 @@ export default function CartPanel() {
                       <button
                         type="button"
                         aria-label={`Add one ${item.name}`}
-                        onClick={() => incrementQty(item.petpooja_id)}
+                        onClick={() => incrementQty(item.id)}
                         className="flex h-6 w-6 items-center justify-center rounded-full text-gold transition-colors hover:bg-white/10"
                       >
                         <Plus size={16} />
@@ -118,7 +138,7 @@ export default function CartPanel() {
                     </span>
                     <button
                       type="button"
-                      onClick={() => removeItem(item.petpooja_id)}
+                      onClick={() => removeItem(item.id)}
                       aria-label={`Remove ${item.name} from cart`}
                       className="text-charcoal/40 transition-colors hover:text-nonveg"
                     >
@@ -142,10 +162,10 @@ export default function CartPanel() {
 
               <button
                 type="button"
-                disabled
-                className="mt-4 w-full cursor-not-allowed rounded-full bg-navy/40 px-4 py-3 text-sm font-bold text-cream"
+                onClick={goToCheckout}
+                className="mt-4 w-full rounded-full bg-navy px-4 py-3 text-sm font-bold text-cream transition-colors hover:bg-navy/90"
               >
-                Checkout (coming soon)
+                Checkout
               </button>
               <button
                 type="button"

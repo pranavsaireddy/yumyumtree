@@ -10,7 +10,7 @@ import type { MenuItem } from "@/lib/menu";
 import { useCartLine, useCartStore } from "@/store/cart";
 
 export default function AddToCartButton({ item }: { item: MenuItem }) {
-  const line = useCartLine(item.petpooja_id);
+  const line = useCartLine(item.id);
   const addItem = useCartStore((s) => s.addItem);
   const incrementQty = useCartStore((s) => s.incrementQty);
   const decrementQty = useCartStore((s) => s.decrementQty);
@@ -33,7 +33,7 @@ export default function AddToCartButton({ item }: { item: MenuItem }) {
         <button
           type="button"
           aria-label={`Remove one ${item.name}`}
-          onClick={() => decrementQty(item.petpooja_id)}
+          onClick={() => decrementQty(item.id)}
           className="flex h-6 w-6 items-center justify-center rounded-full text-gold transition-colors hover:bg-white/10"
         >
           <Minus size={16} />
@@ -47,7 +47,7 @@ export default function AddToCartButton({ item }: { item: MenuItem }) {
         <button
           type="button"
           aria-label={`Add one ${item.name}`}
-          onClick={() => incrementQty(item.petpooja_id)}
+          onClick={() => incrementQty(item.id)}
           className="flex h-6 w-6 items-center justify-center rounded-full text-gold transition-colors hover:bg-white/10"
         >
           <Plus size={16} />

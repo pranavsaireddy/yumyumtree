@@ -38,13 +38,13 @@ export default async function Home() {
       ) : (
         <div className="flex flex-col gap-12">
           {sections.map(({ category, items }) => (
-            <section key={category.petpooja_id} id={category.petpooja_id}>
+            <section key={category.id} id={category.petpooja_id}>
               <h2 className="mb-4 border-b-2 border-gold/40 pb-2 text-xl font-bold text-navy sm:text-2xl">
                 {category.name}
               </h2>
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
                 {items.map((item) => (
-                  <MenuItemCard key={item.petpooja_id} item={item} />
+                  <MenuItemCard key={item.id} item={item} />
                 ))}
               </div>
             </section>

@@ -8,9 +8,15 @@ const petpooja = require('../services/petpooja');
 const router = express.Router();
 
 // GET /api/menu — PUBLIC (no auth). Architecture §12: full menu as { categories, items },
-// a flat item list plus categories that the frontend groups by category_ref.
+// a flat item list plus categories that the frontend groups by category.
 //
-// Visibility rules (§12):
+// SOURCE (S8): reads the DB (menu_categories + menu_items, seeded in S7) via
+// petpooja.getMenuFromDb, so every item carries its real uuid `id`. The cart now stores that
+// id and checkout sends it to POST /api/orders. Both ids are exposed: `id` (uuid) and
+// `petpooja_id` on categories; `id` (uuid), `petpooja_id`, `category_id` (uuid) and
+// `category_ref` (parent petpooja_id, backward-compat) on items.
+//
+// Visibility rules (§12) — owned by the route, unchanged, now over DB rows:
 //   - Inactive categories (is_active === false) are excluded, along with their items
 //     (so no item is left orphaned — referential integrity for the client).
 //   - Unavailable items (is_available === false) are KEPT, with the flag, so the frontend
@@ -18,7 +24,7 @@ const router = express.Router();
 router.get(
   '/',
   asyncHandler(async (req, res) => {
-    const { categories, items } = await petpooja.getMenu();
+    const { categories, items } = await petpooja.getMenuFromDb();
 
     const activeCategories = categories.filter((c) => c.is_active !== false);
     const activeIds = new Set(activeCategories.map((c) => c.petpooja_id));
