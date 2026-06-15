@@ -46,33 +46,35 @@ with the owner operating it from the admin dashboard without developer help.
 ---
 
 ## CURRENT STATE (rewritten every session)
-- Phase B + auth COMPLETE: S1–S7 MERGED. Phase C (payments) begins. Next: Session 8 — checkout
-  UI + flow (cart → POST /api/orders → Razorpay checkout; login-required gate per D-007; add
-  @supabase/ssr middleware for server-side auth).
-- Live: menu API + page + cart + Google auth + ORDER CREATION (POST /api/orders, money-path
-  verified end-to-end against real DB). 80 api tests green, both CI jobs green.
-- DB SEEDED: menu_categories (9) + menu_items (88) via scripts/seedMenu.js. Migration 006
-  (place_order RPC) applied to DEV. Order be0ee15c verified live (customer_id=auth uid).
+- Phase C (payments) in progress. S1–S8 MERGED. Next: Session 9 — payment webhook
+  (POST /payments/webhook: Razorpay HMAC verify on RAW body, processed_webhooks dedupe,
+  confirm_order RPC pending_payment→placed, outbox; reconcile for lost-webhook/orphan).
+  FIRST WEBHOOK + money-path — high review (raw-body-before-json, timing-safe verify).
+- Live + verified end-to-end: menu (DB-backed) + cart (PERSISTED) + Google auth + order creation
+  + DELIVERY CHECKOUT. Customer journey works: browse→cart→checkout→sign-in→pending_payment order.
+  Payment stubbed (Razorpay mock; modal + webhook = S9). 81 api tests, both CI jobs green.
+- GET /api/menu reads DB (exposes uuid id). Cart persisted (zustand persist, yyt-cart v1).
 - TEAM: SOLO build — Pranav owns backend and frontend. No Anudeep.
 - main clean + pushed. Prod env: not yet (S14A). RLS still deny-all (read policies S11).
 - Blockers: PetPooja creds+callback (chase 2026-06-18), Shadowfax/Meta (not started), Razorpay
-  TEST-MODE keys (stub works now; needed for real-Razorpay session), domain not owned (S16).
-- Gate 0 COMPLETE. Debt T-006..T-011 (T-011 idempotency race). Risk R-005. D-007 no guest.
-- Supabase session is in COOKIES not localStorage. `git status` clean-tree check before each
-  session. CI on Node 22 is the source of truth.
+  TEST-MODE keys (NEEDED for S9 webhook signature testing), domain not owned (S16).
+- Gate 0 COMPLETE. Debt T-006..T-013 (T-009 resolved). Risk R-005. D-007 no guest.
+- Supabase session in COOKIES not localStorage. On money path verify the DB ROW, not just UI.
+  `git status` clean-tree check before each session. CI on Node 22 is the source of truth.
 
 ---
 
 ## RECENT SESSIONS (last 3 — full history in MASTER §7)
-- S7 (MERGED 2026-06-14): FIRST money-path — POST /api/orders (pending_payment). Auth-required,
-  server-side pricing from menu_items, idempotency by DB constraint (place_order RPC, mig 006),
-  atomic order+items, Razorpay stub (mock/501). seedMenu.js loaded 9 cats/88 items to DB.
-  80 tests. Verified live: real order, tamper-422, idempotent-replay, no-token-401. T-011 debt.
-- S6 (MERGED 2026-06-14): Google sign-in (Supabase OAuth). AuthButton island; /auth/callback;
-  POST /api/auth/sync verifies token, upserts customers (id==auth uid). D-007 = no guest.
-  Supabase session lives in cookies, not localStorage.
-- S5 (MERGED 2026-06-14): FIRST frontend — server-component menu page + in-memory cart
-  (drawer/bar/sheet). Navy/gold brand. web CI job un-parked.
+- S8 (MERGED 2026-06-15): menu API DB-read (exposes uuid id; resolves T-009) + delivery checkout.
+  /checkout client page: login gate (D-007), address form (placeholder lat-lng), Place Order →
+  POST /api/orders (item_id+quantity only). Cart now PERSISTED (zustand persist, survives OAuth
+  redirect). Stops at order creation (Razorpay modal+webhook=S9). Verified live end-to-end.
+  Debt T-012 (geocoding), T-013 (ssr middleware).
+- S7 (MERGED 2026-06-14): FIRST money-path — POST /api/orders (pending_payment). Server-side
+  pricing, idempotency by DB constraint (place_order RPC, mig 006), Razorpay stub. seedMenu.js
+  loaded 9 cats/88 items. Verified live: tamper-422, idempotent-replay. T-011 debt.
+- S6 (MERGED 2026-06-14): Google sign-in (Supabase OAuth). /api/auth/sync verifies token,
+  upserts customers (id==auth uid). D-007 no guest. Session lives in cookies, not localStorage.
 
 
 ## POINTER INDEX

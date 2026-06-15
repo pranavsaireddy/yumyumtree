@@ -106,22 +106,22 @@ C-03 · Kitchen progression model (preparing→ready driver): callback vs KDS-ta
 ---
 
 ## 6. CURRENT STATE  (the ONLY fully-rewritten section — ≤10 lines)
-- Phase B (Menu+Cart) + auth COMPLETE. Sessions S1–S7 all MERGED. Phase C (payments) begins.
-  Next: Session 8 — checkout UI + flow (frontend cart → POST /api/orders → Razorpay checkout;
-  the login-required-at-checkout gate from D-007; needs @supabase/ssr middleware for server auth).
-- main clean + pushed (e2fa8b0). CI green (both jobs). 80 api tests. Live: menu API + page +
-  cart + Google auth + ORDER CREATION (money-path verified end-to-end against real DB).
-- DB now SEEDED: menu_categories (9) + menu_items (88) loaded via seedMenu.js. Migration 006
-  (place_order RPC) applied to DEV.
+- Phase C (payments) in progress. S1–S8 all MERGED. Next: Session 9 — payment webhook
+  (POST /payments/webhook: verify Razorpay HMAC on raw body, processed_webhooks dedupe,
+  confirm_order RPC (already in mig 005) pending_payment→placed, outbox; + reconcile for
+  lost-webhook/orphan). FIRST WEBHOOK + second money-path session — high review.
+- main clean + pushed (4cdb2e0). CI green (both jobs). 81 api tests. Live + verified end-to-end:
+  menu (DB-backed) + cart (persisted) + Google auth + order creation + DELIVERY CHECKOUT UI.
+- Customer journey works: browse → cart → checkout → sign-in gate → order in pending_payment.
+  Payment itself is stubbed (Razorpay mock; modal + webhook = S9).
 - TEAM: SOLO build — Pranav owns backend AND frontend. No Anudeep.
 - Prod env: none yet (S14A). CI repo secrets not added. RLS still deny-all (read policies S11).
 - Blockers: PetPooja creds+callback (chase 2026-06-18) · Shadowfax (not started) · Meta (not
-  started) · Razorpay TEST-MODE keys (needed for real-Razorpay session; stub works for now) ·
-  domain not owned (S16).
-- Gate 0 COMPLETE. Debt T-006..T-011 (T-011 = idempotency race, revisit at real-Razorpay).
-  Risk R-005 (app/DB whitelist lockstep). D-007 = no guest checkout.
-- PROCESS: PowerShell git one line at a time. `git status` clean-tree check BEFORE each session.
-  Supabase session is in COOKIES not localStorage. Branch BEFORE Claude Code. CI Node 22 = truth.
+  started) · Razorpay TEST-MODE keys (NEEDED for S9 webhook signature testing) · domain (S16).
+- Gate 0 COMPLETE. Debt T-006..T-013 (T-009 resolved). Risk R-005. D-007 no guest checkout.
+- PROCESS: PowerShell git one line at a time. `git status` clean-tree check before each session.
+  Supabase session in COOKIES not localStorage. On money path: verify the DB ROW, not just the UI.
+  Branch BEFORE Claude Code. CI Node 22 = truth.
 
 ---
 
@@ -319,6 +319,44 @@ C-03 · Kitchen progression model (preparing→ready driver): callback vs KDS-ta
   orphan via reconcile.
 - PARKED: none.
 
+### Session 8 — Menu API DB-read + delivery checkout (cart→order)  ·  MERGED 2026-06-15
+- Two parts, one session (folded by owner), apps/api (A) + apps/web (B), with a human
+  verification gate between them (menu must render identically before B was built).
+- Part A (S8A) — GET /api/menu reads the DB: petpooja.getMenuFromDb() queries menu_categories +
+  menu_items (service-role) instead of the mock seed, so items now carry their real uuid `id`.
+  Response exposes BOTH ids: categories {id, petpooja_id, …}; items {id (uuid), petpooja_id,
+  category_id (uuid), category_ref (text, backward-compat), …}. DB numeric price coerced via
+  Number(). Visibility filtering unchanged + route-owned. Mock seam INTACT (getMenu() + seedMenu
+  untouched; petpooja unit test still green). menu.test.js rewritten to mock supabase client.
+  81 tests. RESOLVES T-009 (category_ref → category_id contract).
+- Part B (S8B) — delivery checkout: cart now keyed by uuid `id` (not petpooja_id); menu page
+  groups by category_id. New /checkout client page: client-side login gate (D-007 — getSession +
+  onAuthStateChange; no session → Google OAuth redirectTo /auth/callback?next=/checkout); empty-
+  cart + success states; address form (line1≥5, city≥2, pincode /^\d{6}$/) with INJECTED
+  placeholder lat 17.385 / lng 78.4867 (customer never enters coords). Place Order → POST
+  /api/orders with Bearer token, body {idempotency_key, items:[{item_id:uuid, quantity}],
+  order_type:'delivery', delivery_address} — NEVER price, NEVER customer_id. idempotency_key
+  per attempt, reset on cart-content change (useEffect on cart signature), cleared on success.
+  200/201 → clear cart + "Order placed! payment coming soon" + order_id; 401→re-login, 422→inline
+  error, network→friendly error (all keep cart); button disabled in-flight. CartPanel "Checkout"
+  wired to router.push('/checkout') (drawer + sheet). STOPS at order creation — Razorpay modal +
+  webhook = S9 (razorpay_order_id/amount ignored client-side for now).
+- CART PERSISTENCE added (was the bug that surfaced: OAuth full-page redirect wiped the in-memory
+  cart, so a logged-out user lost their cart at sign-in). zustand persist middleware: key
+  'yyt-cart', version 1, partialize to lines only, skipHydration:true + one-time
+  useCartStore.persist.rehydrate() in the always-mounted CartPanel (SSR-safe, no hydration
+  mismatch). UI state (cart-ui.ts) stays in-memory. Fulfils arch §19 ("persisted, versioned").
+- Verified live end-to-end by human: logged-out → fill cart → Checkout → sign-in gate → Google →
+  back to /checkout with cart INTACT (persistence working) → address → Place Order → "Order
+  placed!" (order 97b3c311…) → cart cleared. lint + build green, CI green.
+- DEBT logged: T-012 (real geocoding/map — placeholder lat-lng must become real before delivery-
+  radius enforcement or Shadowfax), T-013 (@supabase/ssr middleware — checkout gate is client-side
+  only this session; server-side wall + protected routes still needed). T-009 RESOLVED (struck).
+- Concerns for S9: success state needs the Razorpay modal driven by razorpay_order_id + amount
+  from the same response; idempotency-key-on-mutated-cart now handled client-side but T-011
+  (server-side race) still stands; client-side gate is UX not security (server still enforces).
+- PARKED: none.
+
 ---
 
 ## 8. OPEN RISKS  (R-### · risk · likelihood/impact · trigger-to-watch · owner · status)
@@ -355,7 +393,7 @@ T-007 · CI uses actions/checkout@v4 + setup-node@v4 (Node-20 action runtime, de
 T-008 · scheduled_at same-day refine uses server-local time · apps/api/src/schemas/order.js ·
   'later today' could mean wrong day if server isn't IST · repay: before scheduling goes live,
   pin comparison to Asia/Kolkata or ensure server runs IST.
-T-009 · GET /api/menu exposes category_ref (petpooja_id text) · apps/api/src/routes/menu.js ·
+T-009 · ~~RESOLVED (S8A)~~ · GET /api/menu exposes category_ref (petpooja_id text) · apps/api/src/routes/menu.js ·
   S21's DB-backed version uses category_id (uuid FK); contract key could shift · repay at S21:
   keep category_ref stable or version the §12 payload so the frontend grouping doesn't break.
 T-010 · Logo is a 239×240 low-res screenshot · apps/web/public/logo.png · fine at header size
@@ -366,6 +404,14 @@ T-011 · Order-creation idempotency race · apps/api/src/routes/orders.js · con
   orphaned UNPAID Razorpay order; DB never double-orders; reconcile §30 sweeps). Accepted S7
   (mock orphan is free) · repay: at real-Razorpay session, create the Razorpay order AFTER the
   DB insert (insert pending_payment → create rzp order → update row) so a race makes zero orphans.
+T-012 · Delivery address uses placeholder lat-lng (Hyderabad center 17.385/78.4867) ·
+  apps/web/src/app/checkout/page.tsx · customer can't enter coords; the injected fixed point is
+  fine for order creation but WRONG for distance · repay: real geocoding / map picker BEFORE
+  delivery-radius enforcement or Shadowfax dispatch (those need the true drop point).
+T-013 · Checkout login gate is client-side only · apps/web/src/app/checkout/page.tsx · the gate
+  is UX, not security (server still enforces auth via Bearer + prices server-side), but server
+  components can't read auth reliably without @supabase/ssr middleware · repay: add the middleware
+  when a real server-side wall / protected route is needed (deferred since S6).
 (more accrue as PARKED items from sessions)
 
 ---
@@ -396,6 +442,9 @@ T-011 · Order-creation idempotency race · apps/api/src/routes/orders.js · con
 - 2026-06-14 · DEV DB (no prod yet) · S7 · ran migration 006_place_order.sql in Supabase SQL
   editor + executed scripts/seedMenu.js (9 categories, 88 items loaded into menu_categories/
   menu_items). Verified: live order created end-to-end. No prod deploy (prod env = S14A).
+- 2026-06-15 · DEV (no prod yet) · S8 · no schema/migration change. GET /api/menu now reads the
+  DB (data already seeded in S7). Live end-to-end checkout verified (order 97b3c311). No prod
+  deploy (prod env = S14A).
 (none yet — first deploy is Session 15)
 
 ---
