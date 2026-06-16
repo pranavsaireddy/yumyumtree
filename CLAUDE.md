@@ -60,8 +60,9 @@ with the owner operating it from the admin dashboard without developer help.
   calls IDEMPOTENT — drain is at-least-once). T-014/T-015 block go-live, not building.
 - TEAM: SOLO build — Pranav owns backend and frontend. No Anudeep.
 - main clean + pushed (adde37a). Prod env: not yet (S14A). RLS deny-all until S11. pgboss schema in DEV.
-- Blockers: PetPooja creds+callback (chase 2026-06-18, CRITICAL-PATH for S12 KOT), Shadowfax/Meta
-  (not started), domain not owned (S16). Razorpay test keys: HELD (local .env).
+- Blockers: PetPooja CREDENTIALS only (callback CONFIRMED + docs v2.1.0 in hand, C-03 resolved;
+  staging keys needed for S12 live test, gated by fee approval), Shadowfax/Meta (not started),
+  domain not owned (S16). Razorpay test keys: HELD (local .env).
 - Gate 0 COMPLETE. Debt T-006..T-016 (T-009 resolved). Risk R-005. D-007 no guest.
 - PROCESS (reinforced S10): branch-CI-green is the MERGE GATE — push branch, watch branch CI
   green, THEN squash to main (matters most on CI/boot/lifecycle changes; local≠CI bit again).

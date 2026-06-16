@@ -99,9 +99,14 @@ C-02 · v1 CUT: add-on machinery (menu_addons UI/pricing/sync) removed from the 
   v1 substitute: extras listed as standalone PetPooja menu items ("Extra Raita ₹30") that
   sync automatically. menu_addons table stays dormant.
   Revisit: v1.1.   Owner sign-off: OWNER OK via WhatsApp, 2026-06-13.
-C-03 · Kitchen progression model (preparing→ready driver): callback vs KDS-tablet.
-  Status: UNDECIDED — depends on PetPooja's answer to the D2 callback question.
-  To be filled before S21.   Owner sign-off: <pending PetPooja reply>.
+C-03 · ~~UNDECIDED~~ → RESOLVED 2026-06-16 · Kitchen progression driven by PetPooja CALLBACK
+  (push), not KDS-tablet/polling. PetPooja confirmed (email + API docs v2.1.0, saved as
+  PetPooja_API_Docs_v2.1.0.pdf): pass a `callback_url` in each /saveorder payload; PetPooja POSTs
+  status to our /callback endpoint. Status codes: -1=Cancelled, 1/2/3=Accepted, 4=Dispatch,
+  5=Food Ready, 10=Delivered (+ cancel_reason, minimum_prep_time, rider name/phone for self-
+  delivery). This is the push model the architecture preferred — no status polling needed. The
+  preparing→ready transitions are now driven by mapping these callback codes onto the §7 state
+  machine (S12 builds the translation layer). Owner sign-off: design decision, no owner cut needed.
 
 ---
 
@@ -122,8 +127,9 @@ C-03 · Kitchen progression model (preparing→ready driver): callback vs KDS-ta
 - ⚠️ BEFORE-LAUNCH debts: T-014 (reconcile cron — lost webhook = stuck order), T-015 (drain wired
   but workers are stubs — no real kitchen until S12/S13). T-016 (S12/S13 must make PetPooja/
   Shadowfax calls idempotent — drain is at-least-once). None block building; T-014/T-015 block go-live.
-- Blockers: PetPooja creds+callback (chase 2026-06-18 — CRITICAL PATH for S12 KOT) · Shadowfax
-  (not started) · Meta (not started) · domain not owned (S16). Razorpay test keys: HELD.
+- Blockers: PetPooja CREDENTIALS (callback now CONFIRMED + docs in hand, C-03 resolved; only the
+  staging keys remain — needed for S12 live KOT test, gated by integration-fee approval) ·
+  Shadowfax (not started) · Meta (not started) · domain not owned (S16). Razorpay test keys: HELD.
 - Gate 0 COMPLETE. Debt T-006..T-016 (T-009 resolved). Risk R-005. D-007 no guest checkout.
 - PROCESS (reinforced S10): branch-CI-green is the MERGE GATE — push branch, watch branch CI
   green, THEN squash to main (matters most on CI/boot/lifecycle changes; local≠CI bit again).
@@ -552,8 +558,14 @@ T-016 · ⚠️ S12/S13 CORRECTNESS · Outbox drain is AT-LEAST-ONCE · apps/api
 ---
 
 ## 11. EXTERNAL INTEGRATION STATUS  (one block per partner — why blockers get chased)
-- PetPooja · creds held: NO · mode: mock · last contact: API-access email + callback
-  question sent 2026-06-13 · next chase: 2026-06-18 · note: confirm callback support (C-03).
+- PetPooja · creds held: NO (still pending — integration-fee/approval gates the real keys) ·
+  mode: mock · last contact: 2026-06-16 reply — CALLBACK CONFIRMED (push via callback_url in
+  /saveorder; we implement /callback). API docs v2.1.0 received (saved: PetPooja_API_Docs_v2.1.0.
+  pdf). C-03 RESOLVED. · next chase: credentials/staging keys (needed for S12 live test) · note:
+  /saveorder returns PetPooja orderID + clientOrderID; clientOrderID = our idempotency key (T-016).
+  Status codes need a translation layer onto §7 (1/2/3 all = accepted). Servers: staging =
+  developerapi.petpooja.com; key endpoints /saveorder, /callback (ours), /orderstatus (cancel),
+  /fetchmenu, /item_stock. Auth headers: app-key[32]/app-secret[40]/access-token[40].
 - Shadowfax · creds: NO · mode: mock · onboarding: not started · next chase: when Phase E nears.
 - Meta WhatsApp · creds: NO · Business Manager: not created · next: before S23.
 - Razorpay · test mode: available on demand · live: KYC not started (S15A) · note: live
