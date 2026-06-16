@@ -46,36 +46,46 @@ with the owner operating it from the admin dashboard without developer help.
 ---
 
 ## CURRENT STATE (rewritten every session)
-- Phase C (payments) — MONEY LOOP CLOSED. S1–S9 MERGED. Customer can browse → cart → checkout →
-  pay → order confirms (pending_payment→placed). Next: OUTBOX DRAIN + side-effect workers arc
-  (pg-boss → PetPooja KOT / notifications / Shadowfax) — a placed order is INERT until then.
-  Confirm exact next session # against roadmap at Prep.
+- Phase D/E (fulfilment, mocked). S1–S10 MERGED + main green. Money loop closed (S9) AND placed
+  order now FANS OUT: outbox drain → pg-boss queues → 4 STUB workers (trace events only; no real
+  KOT/dispatch until S12/S13). Next: S11 (Order Tracking: RLS read policies + Realtime UI + polling).
+- ⚠️ S11 CHANGES CHARACTER: first session to OPEN RLS (read policies for customer-owned rows) —
+  touches SECURITY POSTURE; brings the FRONTEND back. deny-all wall opens a deliberate crack.
+  Review RLS line-by-line; run the anon-key zero-rows probe.
 - Live + verified end-to-end: menu (DB) + cart (persisted) + Google auth + order creation +
-  delivery checkout + PAYMENT WEBHOOK (real HMAC, timing-safe, confirm_order). 89 api tests,
-  both CI jobs green. Frontend still shows "payment coming soon" (no Razorpay modal yet).
-- ⚠️ TWO BEFORE-LAUNCH debts: T-014 (reconcile cron — lost webhook = stuck order) + T-015
-  (outbox drain — placed orders inert until pg-boss workers exist). Both block go-live, not building.
+  delivery checkout + payment webhook + OUTBOX FAN-OUT (order 57cc372e, restart-idempotent).
+  96 api tests, both CI jobs green. Frontend still shows "payment coming soon" (no Razorpay modal).
+- ⚠️ BEFORE-LAUNCH debts: T-014 (reconcile cron — lost webhook = stuck order), T-015 (drain wired
+  but workers STUBS — no real kitchen until S12/S13). T-016 (S12/S13 must make PetPooja/Shadowfax
+  calls IDEMPOTENT — drain is at-least-once). T-014/T-015 block go-live, not building.
 - TEAM: SOLO build — Pranav owns backend and frontend. No Anudeep.
-- main clean + pushed (7022a94). Prod env: not yet (S14A). RLS still deny-all (read policies S11).
-- Blockers: PetPooja creds+callback (chase 2026-06-18, now critical-path for KOT), Shadowfax/Meta
+- main clean + pushed (adde37a). Prod env: not yet (S14A). RLS deny-all until S11. pgboss schema in DEV.
+- Blockers: PetPooja creds+callback (chase 2026-06-18, CRITICAL-PATH for S12 KOT), Shadowfax/Meta
   (not started), domain not owned (S16). Razorpay test keys: HELD (local .env).
-- Gate 0 COMPLETE. Debt T-006..T-015 (T-009 resolved). Risk R-005. D-007 no guest.
-- Supabase session in COOKIES not localStorage. On money path verify the DB ROW, not just UI.
-  `git status` clean-tree check before each session. CI on Node 22 is the source of truth.
+- Gate 0 COMPLETE. Debt T-006..T-016 (T-009 resolved). Risk R-005. D-007 no guest.
+- PROCESS (reinforced S10): branch-CI-green is the MERGE GATE — push branch, watch branch CI
+  green, THEN squash to main (matters most on CI/boot/lifecycle changes; local≠CI bit again).
+  Supabase session in COOKIES. On money path verify the DB ROW not just UI. CI is the source of truth.
 
 ---
 
 ## RECENT SESSIONS (last 3 — full history in MASTER §7)
+- S10 (MERGED 2026-06-16): pg-boss queue + outbox drain + STUB workers. confirm_order's outbox
+  rows now MOVE: 2s overlap-guarded drain → order.placed fans to pushKot+notify always,
+  +dispatch when delivery (delivery=3/dine_in=2). At-least-once (processed_at only after sends);
+  idempotent across restarts. config requires DATABASE_URL, refuses :6543. /readyz reports
+  boss_started+outbox_unprocessed. pg-boss v12: retry on createQueue, batch handlers. HARDENING:
+  order-not-found is permanent → mark processed + warn (.maybeSingle), not retried forever.
+  HOTFIX: /readyz hung in CI on placeholder DB → boss-down short-circuits before DB + 2s abort.
+  96 tests. Verified live (order 57cc372e). T-015 updated (wired, stubs), T-016 added (S12/S13
+  idempotency). LESSON: branch-CI-green before merging to main.
 - S9 (MERGED 2026-06-15): Razorpay payment webhook (POST /payments/webhook). FIRST webhook +
-  2nd money-path. express.raw before express.json, HMAC-SHA256 timing-safe verify; payment.captured
-  → confirm_order (mig 005, first caller) pending_payment→placed + events/outbox; 3-layer
-  idempotency; amount check. 89 tests (real in-test HMAC). Verified live: confirm/replay/bad-sig/
-  mismatch. Debt T-014 (reconcile) + T-015 (outbox drain) — both BEFORE LAUNCH.
+  2nd money-path. express.raw before express.json, HMAC timing-safe verify; payment.captured →
+  confirm_order (mig 005, first caller) pending_payment→placed + events/outbox; 3-layer
+  idempotency; amount check. 89 tests. Verified live. Debt T-014 + T-015.
 - S8 (MERGED 2026-06-15): menu API DB-read (exposes uuid id; resolves T-009) + delivery checkout.
   /checkout client page, login gate, Place Order → POST /api/orders. Cart PERSISTED (survives
   OAuth redirect). Stops at order creation. Debt T-012 (geocoding), T-013 (ssr middleware).
-- S7 (MERGED 2026-06-14): FIRST money-path — POST /api/orders. Server-side pricing, idempotency
-  by DB constraint (place_order RPC, mig 006), Razorpay stub. seedMenu loaded 9 cats/88 items. T-011.
 
 
 ## POINTER INDEX

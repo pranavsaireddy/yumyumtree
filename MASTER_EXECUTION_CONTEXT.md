@@ -106,23 +106,29 @@ C-03 · Kitchen progression model (preparing→ready driver): callback vs KDS-ta
 ---
 
 ## 6. CURRENT STATE  (the ONLY fully-rewritten section — ≤10 lines)
-- Phase C (payments) — MONEY LOOP CLOSED. S1–S9 MERGED. A customer can browse → cart → checkout
-  → pay → order confirms (pending_payment→placed). Next: the OUTBOX DRAIN + side-effect workers
-  arc (pg-boss → PetPooja KOT / notifications / Shadowfax) — a placed order is currently INERT
-  (outbox row written, nothing drains it). Confirm exact next session # against roadmap at Prep.
-- main clean + pushed (7022a94). CI green (both jobs). 89 api tests. Live + verified end-to-end:
-  menu (DB) + cart (persisted) + Google auth + order creation + delivery checkout + PAYMENT
-  WEBHOOK (real HMAC, confirm_order). Frontend still shows "payment coming soon" (no Razorpay modal).
+- Phase D/E (fulfilment, mocked) underway. S1–S10 MERGED + main green. Money loop closed (S9) AND
+  the placed order now FANS OUT: outbox drain → pg-boss queues → 4 stub workers writing trace
+  events. Next: S11 (Order Tracking: RLS read policies + Realtime UI + polling fallback).
+- main clean + pushed (adde37a). CI green (both jobs). 96 api tests. Live + verified end-to-end:
+  menu (DB) + cart (persisted) + Google auth + order creation + delivery checkout + payment
+  webhook + OUTBOX DRAIN/FAN-OUT (order 57cc372e, restart-idempotent). Workers are STUBS (no real
+  KOT/dispatch yet → S12/S13). Frontend still shows "payment coming soon" (no Razorpay modal).
+- ⚠️ S11 CHANGES CHARACTER: first session to OPEN RLS (read policies for customer-owned rows) —
+  touches SECURITY POSTURE; brings the FRONTEND back (Realtime tracking + polling fallback). The
+  deny-all wall opens a deliberate crack. Review RLS line-by-line; anon-key zero-rows probe.
 - TEAM: SOLO build — Pranav owns backend AND frontend. No Anudeep.
-- Prod env: none yet (S14A). CI repo secrets not added. RLS still deny-all (read policies S11).
-- ⚠️ TWO BEFORE-LAUNCH debts born this session: T-014 (reconcile cron — lost webhook = stuck
-  order) and T-015 (outbox drain — placed orders are inert until workers exist). Neither blocks
-  more building, both block go-live.
-- Blockers: PetPooja creds+callback (chase 2026-06-18 — now on the critical path for KOT) ·
-  Shadowfax (not started) · Meta (not started) · domain not owned (S16). Razorpay test keys: HELD.
-- Gate 0 COMPLETE. Debt T-006..T-015 (T-009 resolved). Risk R-005. D-007 no guest checkout.
-- PROCESS: PowerShell git one line at a time. `git status` clean-tree check before each session.
-  Supabase session in COOKIES. On money path verify the DB ROW, not just UI. CI Node 22 = truth.
+- Prod env: none yet (S14A). CI repo secrets not added (DB tests skip/placeholder by design —
+  /readyz now fast-fails on unreachable DB). RLS still deny-all until S11. pgboss schema now in DEV.
+- ⚠️ BEFORE-LAUNCH debts: T-014 (reconcile cron — lost webhook = stuck order), T-015 (drain wired
+  but workers are stubs — no real kitchen until S12/S13). T-016 (S12/S13 must make PetPooja/
+  Shadowfax calls idempotent — drain is at-least-once). None block building; T-014/T-015 block go-live.
+- Blockers: PetPooja creds+callback (chase 2026-06-18 — CRITICAL PATH for S12 KOT) · Shadowfax
+  (not started) · Meta (not started) · domain not owned (S16). Razorpay test keys: HELD.
+- Gate 0 COMPLETE. Debt T-006..T-016 (T-009 resolved). Risk R-005. D-007 no guest checkout.
+- PROCESS (reinforced S10): branch-CI-green is the MERGE GATE — push branch, watch branch CI
+  green, THEN squash to main (matters most on CI/boot/lifecycle changes; local≠CI bit again).
+  PowerShell git one line at a time. `git status` clean before each session. On money path verify
+  the DB ROW not just UI. CI is the source of truth.
 
 ---
 
@@ -399,6 +405,66 @@ C-03 · Kitchen progression model (preparing→ready driver): callback vs KDS-ta
   still shows "payment coming soon"; wiring the real modal is its own concern).
 - PARKED: none.
 
+### Session 10 — pg-boss queue + outbox drain + stub workers  ·  MERGED 2026-06-16
+- INFRASTRUCTURE, not money-path. apps/api only. Makes a placed order stop being inert: the
+  order.placed outbox rows confirm_order writes (S9) now MOVE through a drain → pg-boss queues.
+  Workers are STUBS (write '<queue>.stub_executed' order_events) — real bodies land S12/S13/S17.
+- PREREQUISITE (manual): DATABASE_URL set to Supabase DIRECT 5432 (NOT pooled 6543); IPv6 enabled
+  so pg-boss connected. config.js now REQUIRES DATABASE_URL and REFUSES any ':6543' URL with an
+  explicit "use the direct 5432" message (the #1 failure mode, guarded + verified firing).
+- pg-boss v12.19.1 — Claude verified the installed API against §9's older example and ADAPTED:
+  (a) retry policy is QUEUE-level via createQueue({retryLimit,retryBackoff}), NOT a work() option;
+  (b) queues created explicitly before work()/send(); (c) work handlers receive a BATCH array.
+  This is the "verify against installed version, don't copy stale snippet" discipline working.
+- queue/ files: boss.js (PgBoss singleton on config.DATABASE_URL, error→pino; construct does NOT
+  connect — connects at boss.start(), so tests/readyz can require it cheaply); workers.js
+  (startWorkers + isBossStarted; 4 queues pos.pushKot 5×backoff / delivery.dispatch 3×backoff /
+  notify.statusChanged 3 / loyalty.award 3); jobs/*.js (4 stubs); outboxDrain.js (drainOnce(deps)
+  INJECTABLE core + start()/stop(); 2s overlap-guarded unref'd interval; select unprocessed
+  oldest-first limit 50; per-row try/catch; order.placed → pushKot+notify always, +dispatch when
+  order_type='delivery'; processed_at set ONLY after sends succeed); dlq.js getFailedCounts()
+  (v12 has NO failed-count API → SQL on pgboss.job WHERE state='failed'; documented in-file).
+- server.js: after listen → startWorkers + outboxDrain.start; SIGINT/SIGTERM → stop drain +
+  boss.stop({graceful:true}). /readyz enriched: {boss_started, outbox_unprocessed}, 503 if boss down.
+- HARDENING (manual-test finding, fixed same branch): manual test surfaced 2 orphan outbox rows
+  (S9 test detritus — order.placed rows whose orders never existed, created 2026-06-13) that the
+  drain retried FOREVER every 2s (.single() → "Cannot coerce result to single JSON object"). Two
+  fixes: (1) DATA — deleted the 2 orphan rows; (2) CODE — drain now distinguishes PERMANENT from
+  TRANSIENT: order-not-found (.single→.maybeSingle, data:null) is permanent → mark processed +
+  warn + NO fan-out (stop retrying); transient errors (DB/network, failed send, failed update)
+  still throw → leave unprocessed for retry (at-least-once PRESERVED). New not-found test added.
+- HOTFIX (CI red on main, fixed via s10-hotfix-readyz-ci branch): S10 was pushed to main before
+  branch-CI confirmed green → CI api(vitest) went red. ONE test ("GET /readyz returns 503 when
+  pg-boss has not started") TIMED OUT 5000ms in CI but passed locally — the standing local≠CI
+  risk biting again (cf S2A Node 20). Cause: /readyz did an unconditional DB round-trip
+  (customers select) before the boss check; in CI the placeholder unreachable localhost DB hung
+  the await past the test timeout. Fix (app.js): (1) boss-not-started SHORT-CIRCUITS to 503
+  BEFORE any DB call (hermetic + prod-correct: down queue = placed order goes nowhere); (2) both
+  /readyz DB queries carry AbortSignal.timeout(2000) so DB-down also 503s fast. Net: boss down→503
+  fast, DB down→503 fast(≤2s), both up→200. PROVEN under simulated-CI unreachable-DB condition
+  (13ms, was 5000ms timeout) before pushing — the verification step that was missing the first time.
+- Tests: 96 (was 89: +5 drain unit, +1 readyz-503, +1 not-found). Mutation-checked: forcing
+  delivery.dispatch for all order_types fails the dine_in fan-out test; forcing a missing-order
+  row to fan out fails the not-found test. Both guards genuinely covered.
+- VERIFIED LIVE (clean slate, order 57cc372e-…, total 499): fresh delivery order → signed webhook
+  → placed → drain fanned out → order_events showed payment_confirmed + all 3 stub events; restart
+  → NO duplicate executions/events (processed_at honored — the property that, broken, double-fires
+  KOTs); /readyz {db:ok, boss_started:true, outbox_unprocessed:0}.
+- T-015 UPDATED: outbox drain now WIRED (was "not built"), but workers are stubs → placed orders
+  still don't reach the real kitchen until S12/S13. T-014 (reconcile) UNCHANGED — still before-launch.
+- NEW S12/S13 OBLIGATION (logged as T-016): the drain is AT-LEAST-ONCE — a row can be re-sent if
+  mark-processed fails after a successful send. With stubs that's a harmless duplicate event; once
+  S12/S13 put REAL PetPooja/Shadowfax calls behind these queues, a re-send = duplicate KOT /
+  duplicate rider unless those external calls are IDEMPOTENT. S12/S13 MUST make them idempotent.
+- PROCESS LESSON (banked): branch-CI-green is the merge gate. Push branch → watch branch CI green
+  → THEN squash to main. Matters MOST on sessions touching CI config / boot / lifecycle code. S10
+  skipped it and main went red; the hotfix also collapsed the branch-watch (merged then confirmed
+  main green) — outcome fine, habit still forming. The two-minute CI wait is cheap insurance.
+- Concerns for S11: first session to OPEN RLS (read policies for customer-owned rows) — touches
+  security posture; brings the frontend back (Realtime tracking UI + polling fallback). The anon
+  key starts being able to read specific rows — the deny-all wall opens a crack, deliberately.
+- PARKED: none (hardening + hotfix folded into the session, not deferred).
+
 ---
 
 ## 8. OPEN RISKS  (R-### · risk · likelihood/impact · trigger-to-watch · owner · status)
@@ -459,10 +525,17 @@ T-014 · ⚠️ BEFORE LAUNCH · Reconcile cron not built · webhook (routes/pay
   never arrives leaves the order stuck in pending_payment forever (customer charged, no order
   progresses) · repay: build the §30 reconcile sweep (poll Razorpay for recent captures, find
   any without a placed order, flag for manual review) as its own session BEFORE go-live.
-T-015 · ⚠️ BEFORE LAUNCH · Outbox drain not built · confirm_order writes the order.placed outbox
-  row but NOTHING reads it · no pg-boss workers exist yet, so KOT (PetPooja) / notifications /
-  delivery dispatch (Shadowfax) never fire — a placed order is currently INERT (kitchen never
-  hears it) · repay: outbox drain loop + pg-boss side-effect workers (the next major arc).
+T-015 · ⚠️ BEFORE LAUNCH · Outbox drain WIRED (S10) but workers are STUBS · apps/api/src/queue ·
+  the drain now fans order.placed → pg-boss queues, but the job bodies only write
+  '<queue>.stub_executed' events — no real KOT (PetPooja) / dispatch (Shadowfax) / notify /
+  loyalty · a placed order still does not reach the real kitchen · repay: S12 (PetPooja KOT) +
+  S13 (Shadowfax dispatch) + S17 (loyalty) swap real bodies into the existing stubs.
+T-016 · ⚠️ S12/S13 CORRECTNESS · Outbox drain is AT-LEAST-ONCE · apps/api/src/queue/outboxDrain.js
+  · a row can be re-sent if mark-processed fails after a successful boss.send (or on restart mid-
+  batch). With S10 stubs this is a harmless duplicate order_event; once S12/S13 put REAL external
+  calls behind pos.pushKot / delivery.dispatch, a re-send = DUPLICATE KOT / DUPLICATE rider unless
+  the calls are idempotent · repay: S12/S13 MUST make PetPooja/Shadowfax calls idempotent (e.g.
+  idempotency key / check-before-send / dedupe on an external ref) — do not assume exactly-once.
 (more accrue as PARKED items from sessions)
 
 ---
@@ -500,6 +573,13 @@ T-015 · ⚠️ BEFORE LAUNCH · Outbox drain not built · confirm_order writes 
   005). Payment webhook live; confirm_order called for the first time. Verified live: order
   97b3c311 pending_payment→placed via signed webhook. Razorpay test keys + webhook secret in
   local .env only. No prod deploy (prod env = S14A).
+- 2026-06-16 · DEV (no prod yet) · S10 (+ hardening + s10-hotfix-readyz-ci) · no SQL migration,
+  but pg-boss created its own `pgboss` schema in the DEV Supabase DB on first boss.start() (DDL
+  via the direct 5432 connection). Verified live: order 57cc372e fanned out to 3 stub queues;
+  restart-idempotent. CI went RED on first push (a5101d4, /readyz hung in CI on placeholder DB),
+  fixed forward by adde37a (boss short-circuit + 2s DB abort) — main green. No prod deploy (S14A).
+  ROLLBACK: none needed; forward-fix only. NOTE: pgboss schema will be re-created on PROD's first
+  boot at S14A (DDL on a fresh direct-5432 prod connection).
 (none yet — first deploy is Session 15)
 
 ---
