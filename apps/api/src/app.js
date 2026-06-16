@@ -5,6 +5,7 @@ const cors = require('cors');
 
 const config = require('./config');
 const supabase = require('./lib/supabase');
+const workers = require('./queue/workers');
 const errorHandler = require('./middleware/errorHandler');
 
 const app = express();
@@ -35,16 +36,35 @@ app.get('/health', (req, res) => {
   res.status(200).json({ status: 'ok', project: 'YumYumTree API' });
 });
 
-// Readiness probe: a real DB round-trip. Any failure (query error or thrown/network
-// error) is a 503 { db: 'down' } — never a 500 — so uptime monitors read it correctly.
+// Readiness probe: a real DB round-trip PLUS the queue's liveness. Any DB failure (query error
+// or thrown/network error) or a not-yet-started pg-boss is a 503 — never a 500 — so uptime
+// monitors read it correctly. outbox_unprocessed surfaces a backed-up drain at a glance.
 app.get('/readyz', async (req, res) => {
+  const bossStarted = workers.isBossStarted();
+  let dbOk = true;
+  let outboxUnprocessed = null;
+
   try {
     const { error } = await supabase.from('customers').select('id').limit(1);
-    if (error) return res.status(503).json({ db: 'down' });
-    return res.status(200).json({ db: 'ok', app_env: config.APP_ENV });
+    if (error) dbOk = false;
+
+    const { count, error: outboxErr } = await supabase
+      .from('outbox')
+      .select('id', { count: 'exact', head: true })
+      .is('processed_at', null);
+    if (outboxErr) dbOk = false;
+    else outboxUnprocessed = count;
   } catch (_err) {
-    return res.status(503).json({ db: 'down' });
+    dbOk = false;
   }
+
+  const ready = dbOk && bossStarted;
+  return res.status(ready ? 200 : 503).json({
+    db: dbOk ? 'ok' : 'down',
+    boss_started: bossStarted,
+    outbox_unprocessed: outboxUnprocessed,
+    app_env: config.APP_ENV,
+  });
 });
 
 app.use(errorHandler);

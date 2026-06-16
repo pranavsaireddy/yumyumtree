@@ -5,12 +5,12 @@ const path = require('path');
 // Load apps/api/.env regardless of the process's working directory.
 require('dotenv').config({ path: path.resolve(__dirname, '..', '.env') });
 
-const REQUIRED = ['PORT', 'FRONTEND_URL', 'SUPABASE_URL', 'SUPABASE_SERVICE_ROLE_KEY', 'APP_ENV'];
+// DATABASE_URL is REQUIRED from S10 on: pg-boss (queue/boss.js) connects with it directly.
+const REQUIRED = ['PORT', 'FRONTEND_URL', 'SUPABASE_URL', 'SUPABASE_SERVICE_ROLE_KEY', 'APP_ENV', 'DATABASE_URL'];
 const VALID_APP_ENVS = ['development', 'test', 'production'];
 
 // Architecture §11 — read as optional this session; one warning lists any that are absent.
 const OPTIONAL = [
-  'DATABASE_URL',
   'PETPOOJA_MODE',
   'RAZORPAY_MODE',
   'RAZORPAY_KEY_SECRET',
@@ -42,6 +42,17 @@ if (!isBlank('APP_ENV') && !VALID_APP_ENVS.includes(appEnv)) {
   problems.push(`APP_ENV must be one of {${VALID_APP_ENVS.join(', ')}} (got "${appEnv}")`);
 }
 
+// pg-boss needs DDL privileges and steady, long-lived sessions. Supabase's TRANSACTION POOLER
+// (port 6543) provides neither — it multiplexes short-lived sessions and forbids the schema/
+// prepared-statement behaviour pg-boss relies on. Refuse it explicitly rather than failing
+// later at boss.start() with an opaque error.
+if (!isBlank('DATABASE_URL') && String(process.env.DATABASE_URL).includes(':6543')) {
+  problems.push(
+    'DATABASE_URL points at the Supabase transaction pooler (:6543). pg-boss requires the ' +
+      'DIRECT connection — use the port 5432 string (Supabase → Database → Connection string → Direct).'
+  );
+}
+
 // V2 Patch C2 — refuse to run a production app under a non-production Node runtime.
 if (appEnv === 'production' && process.env.NODE_ENV !== 'production') {
   problems.push('APP_ENV=production requires NODE_ENV=production');
@@ -62,6 +73,8 @@ const config = Object.freeze({
   SUPABASE_SERVICE_ROLE_KEY: process.env.SUPABASE_SERVICE_ROLE_KEY,
   APP_ENV: process.env.APP_ENV,
   NODE_ENV: process.env.NODE_ENV,
+  // Direct Postgres connection string for pg-boss (S10). Required; never the :6543 pooler.
+  DATABASE_URL: process.env.DATABASE_URL,
   // External-provider mode flag (the template every partner copies). Optional, defaults
   // to 'mock' at the consuming service since PetPooja creds don't exist yet (real sync = S21).
   PETPOOJA_MODE: process.env.PETPOOJA_MODE,

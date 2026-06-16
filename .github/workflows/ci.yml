@@ -61,6 +61,11 @@ jobs:
           FRONTEND_URL: ${{ secrets.FRONTEND_URL || 'http://localhost:3000' }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL || 'https://placeholder.supabase.co' }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY || 'placeholder-service-role-key' }}
+          # DATABASE_URL is required by config.js (S10, pg-boss). The placeholder is a valid
+          # DIRECT (:5432) connection string — never the :6543 pooler, which config.js refuses.
+          # pg-boss only ever connects at boss.start() (server.js), which the test suite never
+          # calls, so the placeholder is constructed but never dialled.
+          DATABASE_URL: ${{ secrets.DATABASE_URL || 'postgresql://placeholder:placeholder@localhost:5432/postgres' }}
           # APP_ENV is forced to 'test' by vitest.config.js (test.env), so it is not set here.
 
   # ────────────────────────────────────────────────────────────────────────────
