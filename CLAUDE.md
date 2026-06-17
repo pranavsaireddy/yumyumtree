@@ -45,6 +45,24 @@ with the owner operating it from the admin dashboard without developer help.
 
 ---
 
+## LOCAL ENV / CONNECTIVITY (load-bearing — bites at boot)
+- pg-boss connects to the Supabase DIRECT db host (db.<ref>.supabase.co:5432), whose DNS is
+  IPv6-ONLY (AAAA record). The dev's home ethernet (Airtel Xtream) has NO IPv6 → the host fails
+  to resolve → the api hard-exits on boot (server.js process.exit(1) when startWorkers fails:
+  "Connection terminated due to connection timeout").
+- WORKAROUND (mandatory): for ANY session that boots the api / runs pg-boss / runs the E2E suite,
+  the developer must be on MOBILE HOTSPOT (which has IPv6), NOT the Airtel ethernet. Sessions that
+  only hit Supabase REST/PostgREST over HTTPS (e.g. menu, raw RLS probes) work on either network —
+  only the DIRECT 5432 / pg-boss path needs IPv6.
+- Do NOT "fix" this with a local/Docker Postgres standing in for pg-boss in tests — that makes the
+  suite pass against a FAKE DB and defeats the point. Tests run against the real Supabase DB; the
+  fix is the network (hotspot), not a substitute DB.
+- DATABASE_URL must be the direct 5432 string, never the :6543 pooler (config.js refuses :6543).
+- CI: GitHub runners ARE IPv6-capable, so the direct connection is expected to resolve there
+  (first proven at S11A — watch for it).
+
+---
+
 ## CURRENT STATE (rewritten every session)
 - Phase D/E (fulfilment, mocked). S1–S11 MERGED + main green (cea27c8). Customer can browse →
   cart → checkout → pay → confirm → FAN-OUT to queues (stubs) → and WATCH IT LIVE on
