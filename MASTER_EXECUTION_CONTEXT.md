@@ -22,13 +22,14 @@ Zod §27 · rate limits §28 · reconcile §30 · admin security §32.
 Load-bearing facts (each has caused or will cause a 2am incident if forgotten):
 - Webhook routes MUST mount express.raw BEFORE express.json — signature needs the raw body.
 - pg-boss needs the Supabase DIRECT connection string (port 5432), never the 6543 pooler.
-- pg-boss's direct db host (db.<ref>.supabase.co:5432) is IPv6-ONLY (AAAA). The dev's home
-  ethernet (Airtel Xtream) has NO IPv6 → host won't resolve → api hard-exits on boot. WORKAROUND
-  (mandatory): the dev must be on MOBILE HOTSPOT (has IPv6) for ANY session that boots the api /
-  runs pg-boss / runs the E2E suite. REST/PostgREST-over-HTTPS work on either network; only the
-  direct-5432 path needs IPv6. Do NOT substitute a local/Docker Postgres for pg-boss in tests
-  (passes against a fake DB, defeats the test). GitHub CI runners ARE IPv6-capable (first proven
-  S11A). [Detail in CLAUDE.md → LOCAL ENV / CONNECTIVITY.]
+- pg-boss connection / IPv6: the Supabase DIRECT db host (db.<ref>:5432) is IPv6-ONLY (AAAA). Any
+  IPv4-only environment (the dev's Airtel ethernet AND GitHub CI runners) gets connect ENETUNREACH
+  → api process.exit(1) on boot (proven S11A: `ENETUNREACH 2406:da1a:...:5432`). SOLUTION (in force
+  since S11A): use the Supabase SESSION POOLER everywhere — aws-0-<region>.pooler.supabase.com:5432,
+  user postgres.<ref> — IPv4-reachable AND session-mode (pg-boss-compatible), :5432 passes the
+  config guard. DATABASE_URL = session-pooler string in local apps/api/.env AND the GitHub secret.
+  NEVER the :6543 transaction pooler (breaks pg-boss; config.js refuses it). This RETIRES the old
+  mobile-hotspot workaround — ethernet works everywhere now. [Detail in CLAUDE.md → LOCAL ENV.]
 - PetPooja API cannot sync add-ons — permanent; extras are modeled as standalone menu items.
 - Supabase free tier pauses after ~7 idle days — the menu-sync cron is what keeps it warm.
 - Realtime respects RLS — the frontend reads via the anon key, so RLS must exist before S11.

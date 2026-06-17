@@ -46,20 +46,27 @@ with the owner operating it from the admin dashboard without developer help.
 ---
 
 ## LOCAL ENV / CONNECTIVITY (load-bearing — bites at boot)
-- pg-boss connects to the Supabase DIRECT db host (db.<ref>.supabase.co:5432), whose DNS is
-  IPv6-ONLY (AAAA record). The dev's home ethernet (Airtel Xtream) has NO IPv6 → the host fails
-  to resolve → the api hard-exits on boot (server.js process.exit(1) when startWorkers fails:
-  "Connection terminated due to connection timeout").
-- WORKAROUND (mandatory): for ANY session that boots the api / runs pg-boss / runs the E2E suite,
-  the developer must be on MOBILE HOTSPOT (which has IPv6), NOT the Airtel ethernet. Sessions that
-  only hit Supabase REST/PostgREST over HTTPS (e.g. menu, raw RLS probes) work on either network —
-  only the DIRECT 5432 / pg-boss path needs IPv6.
-- Do NOT "fix" this with a local/Docker Postgres standing in for pg-boss in tests — that makes the
-  suite pass against a FAKE DB and defeats the point. Tests run against the real Supabase DB; the
-  fix is the network (hotspot), not a substitute DB.
-- DATABASE_URL must be the direct 5432 string, never the :6543 pooler (config.js refuses :6543).
-- CI: GitHub runners ARE IPv6-capable, so the direct connection is expected to resolve there
-  (first proven at S11A — watch for it).
+- pg-boss needs a direct Postgres session (port 5432, session mode — LISTEN/NOTIFY + advisory
+  locks). Two ways to reach it, and the WHY behind the rule:
+  - Supabase DIRECT host (db.<ref>.supabase.co:5432) is IPv6-ONLY (AAAA only). IPv4-only networks
+    can't reach it → connect ENETUNREACH / connection timeout → server.js process.exit(1) on boot
+    (startWorkers fails). This bit BOTH the dev's home ethernet (Airtel Xtream, no IPv6) AND the
+    GitHub CI runners (IPv4-only) — proven at S11A with `connect ENETUNREACH 2406:da1a:...:5432`.
+  - SOLUTION (in force since S11A): use the Supabase SESSION POOLER everywhere —
+    aws-0-<region>.pooler.supabase.com:5432, user postgres.<ref>. It is IPv4-reachable AND
+    session-mode (pg-boss-compatible), and :5432 passes config.js's guard. DATABASE_URL = the
+    session-pooler string in: local apps/api/.env AND the GitHub DATABASE_URL secret.
+- RESULT: ethernet works everywhere now — NO mobile hotspot needed (the old hotspot workaround is
+  retired; it was only ever a way to get IPv6, which the pooler makes unnecessary).
+- NEVER the TRANSACTION pooler (:6543) — transaction mode breaks pg-boss (no session LISTEN/locks),
+  and config.js refuses :6543 anyway. Session pooler = :5432; transaction pooler = :6543.
+- Pooler has a free-tier connection cap; fine for 1 dev + E2E. "too many connections" = pooler
+  limit, not a code bug.
+- Do NOT "fix" a connection failure with a local/Docker Postgres standing in for pg-boss — that
+  makes tests pass against a FAKE DB. Tests run against the real Supabase DB via the pooler.
+- REST/PostgREST-over-HTTPS (menu, raw RLS probes) never needed any of this — works on any network.
+- Prod (S14A, Railway) has IPv6, so it MAY use the direct host — but the pooler works there too and
+  is the simpler single-string-everywhere choice.
 
 ---
 
