@@ -143,17 +143,59 @@ jobs:
         working-directory: apps/web
         run: npx playwright install --with-deps chromium
 
-      - name: Boot servers + run E2E
+      - name: Boot servers and run E2E
         working-directory: apps/web
         run: |
-          node ../api/src/server.js > /tmp/api.log 2>&1 &
-          npm run dev > /tmp/web.log 2>&1 &
-          npx wait-on -t 120000 http-get://localhost:4000/health http-get://localhost:3000
-          npm run e2e
+          set -uo pipefail
 
+          # Dump everything we need to diagnose a boot failure, IN THIS SHELL (so it is always
+          # printed even if a follow-up step never runs), and while the servers may still be alive
+          # (so the listener check is meaningful).
+          dump_diag() {
+            echo "==================== listeners on 3000/4000 ===================="
+            ss -ltnp 2>/dev/null | grep -E ':(3000|4000)\b' || echo "nothing listening on 3000/4000"
+            echo "==================== /tmp/api.log ============================="
+            cat /tmp/api.log 2>/dev/null || echo "(no /tmp/api.log)"
+            echo "==================== /tmp/web.log ============================="
+            cat /tmp/web.log 2>/dev/null || echo "(no /tmp/web.log)"
+            echo "==============================================================="
+          }
+
+          # Start the API (direct DATABASE_URL → pg-boss starts for real). Background; keep its PID.
+          node ../api/src/server.js > /tmp/api.log 2>&1 &
+          API_PID=$!
+          echo "api started (pid $API_PID)"
+
+          # Start the web dev server. Background; keep its PID.
+          npm run dev > /tmp/web.log 2>&1 &
+          WEB_PID=$!
+          echo "web started (pid $WEB_PID)"
+
+          # Wait for BOTH ports. On timeout, dump diagnostics HERE and fail the step (job → red).
+          # We never mask the failure — exit 1 below keeps it red; we only make it legible.
+          if ! npx wait-on -t 120000 http-get://localhost:4000/health http-get://localhost:3000; then
+            echo "::error::wait-on timed out — api(:4000) and/or web(:3000) did not come up"
+            dump_diag
+            exit 1
+          fi
+
+          echo "both servers up — running E2E"
+          # A spec failure (incl. a mid-run server crash) also dumps diagnostics, then fails.
+          if ! npm run e2e; then
+            echo "::error::E2E specs failed"
+            dump_diag
+            exit 1
+          fi
+
+      # Redundant safety net: the log FILES persist on disk, so re-print them in their own step in
+      # case the in-step dump above was ever cut short. Listeners are omitted here (servers from the
+      # previous step are gone by now, so a listener check would be misleading — the in-step one is
+      # authoritative).
       - name: Dump server logs on failure
         if: failure()
-        run: tail -n 200 /tmp/api.log /tmp/web.log || true
+        run: |
+          echo "===== /tmp/api.log ====="; cat /tmp/api.log 2>/dev/null || echo "(no /tmp/api.log)"
+          echo "===== /tmp/web.log ====="; cat /tmp/web.log 2>/dev/null || echo "(no /tmp/web.log)"
 
       - name: Upload Playwright artifacts on failure
         if: failure()
