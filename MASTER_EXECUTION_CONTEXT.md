@@ -113,6 +113,19 @@ D-008 · 2026-06-16 · NO GET /api/orders/:id backend route. Customer-facing sin
   Decided-by: human ruling mid-S11; Fable concurred (RLS-read is the faithful realization of the
   session's design, not a deviation).
 
+D-009 · 2026-06-17 · DATABASE_URL = Supabase SESSION POOLER everywhere (local + CI), not the
+  direct host. Why: pg-boss needs a direct PG session (5432, session-mode for LISTEN/NOTIFY +
+  advisory locks); Supabase's DIRECT host (db.<ref>:5432) is IPv6-ONLY, and IPv4-only environments
+  (dev's Airtel ethernet AND GitHub CI runners) get connect ENETUNREACH → api process.exit(1) on
+  boot (proven S11A: `ENETUNREACH 2406:da1a:...:5432`). The SESSION pooler (aws-0-<region>.pooler.
+  supabase.com:5432, user postgres.<ref>) is IPv4-reachable AND session-mode AND :5432 (passes the
+  config guard, which only refuses the :6543 TRANSACTION pooler — transaction mode breaks pg-boss).
+  RETIRES the mobile-hotspot workaround — ethernet works everywhere now (verified). Prod (Railway,
+  S14A) has IPv6 so MAY use direct, but the pooler works there too (simpler single string).
+  Revisit-if: pooler connection-cap pressure under real load (unlikely at this scale) → IPv4 add-on
+  or per-env tuning.
+  Decided-by: Fable proposal after the CI ENETUNREACH dump; human applied + verified on ethernet.
+
 ---
 
 ## 5. CUTS REGISTER  (append-only, owner-signed; a cut without a signature is a forgotten feature)
@@ -135,30 +148,30 @@ C-03 · ~~UNDECIDED~~ → RESOLVED 2026-06-16 · Kitchen progression driven by P
 ---
 
 ## 6. CURRENT STATE  (the ONLY fully-rewritten section — ≤10 lines)
-- Phase D/E (fulfilment, mocked). S1–S11 MERGED + main green (cea27c8). Customer can now: browse →
-  cart → checkout → pay → order confirms → FAN-OUT to queues (stubs) → and WATCH IT LIVE on
-  /track/[orderId] (RLS-scoped read + Realtime + poll fallback). Next: S11A (Playwright critical-
-  path E2E — V2 patch inserts it right after S11). Confirm against roadmap at Prep.
-- 96 api tests; web build green. Verified live this session: RLS (anon→0 orders, own-token→own 3
-  orders), live stepper advance (pill "Live"), offline→poll→restore, logged-out→sign-in.
-- AUTH MECHANISM (settled S11): real session = Supabase cookie sb-<ref>-auth-token (S6 Google
-  OAuth via @supabase/ssr); browser client reads it → auth.uid() works for RLS. The custom
-  localStorage.token (id/iat/exp) is INERT leftover (T-017 — delete it; tripped us twice).
-- PATTERN LOCKED (D-008): customer order reads go via RLS (Supabase browser client), NOT a
-  backend GET route (there is no GET /api/orders/:id). Reads via RLS, writes via API.
-- ⚠️ BEFORE-LAUNCH debts: T-014 (reconcile cron), T-015 (drain wired but workers STUBS — no real
-  kitchen until S12/S13), T-016 (S12/S13 must make PetPooja/Shadowfax calls idempotent). Block
-  go-live, not building. NEW: T-017 (dead localStorage cleanup, low-effort).
+- Phase D/E (fulfilment, mocked). S1–S11A MERGED + main green (9316c61). Money path is now
+  GUARDED BY AN AUTOMATED E2E in CI on every push (menu→cart→checkout→simulated webhook→/track
+  reaches Placed). Next: S12 (real PetPooja KOT — swap the pushKot stub for the live /saveorder).
+- CI now has 3 jobs (api vitest, web lint+build, e2e playwright) — all green on main. Local: api
+  boots on ETHERNET via the session pooler (D-009; mobile-hotspot retired). 5× green E2E local.
+- ⚠️ DO FIRST: T-018 — ROTATE the Supabase service_role key (exposed in chat scrollback during
+  S11A verification). Update apps/api/.env + GitHub secret. Low risk (dev/private) but rotate-first.
+- DB CONNECTIVITY (D-009): DATABASE_URL = SESSION POOLER everywhere (aws-0-…pooler:5432, IPv4,
+  session-mode). Direct host is IPv6-only → unreachable from IPv4 nets (ethernet, CI runners).
+  NEVER the :6543 transaction pooler (breaks pg-boss; config refuses it). [CLAUDE.md → LOCAL ENV.]
+- ⚠️ BEFORE-LAUNCH debts: T-014 (reconcile cron), T-015 (drain wired, workers STUBS — no real
+  kitchen until S12/S13), T-016 (S12/S13 must make PetPooja/Shadowfax calls IDEMPOTENT — drain is
+  at-least-once; clientOrderID is the key). T-017 (dead localStorage). T-018 (rotate key).
 - TEAM: SOLO build — Pranav owns backend and frontend. No Anudeep.
-- Prod env: none yet (S14A). RLS now has read policies (007). pgboss schema in DEV. Realtime on
-  `orders` enabled. Frontend still shows "payment coming soon" (no Razorpay modal).
+- Prod env: none yet (S14A). RLS read policies live (007). Realtime on orders. pgboss schema in DEV.
+  Frontend still shows "payment coming soon" (no Razorpay modal). E2E test user test_e2e@… in dev.
 - Blockers: PetPooja CREDENTIALS only (callback CONFIRMED + docs v2.1.0 in hand, C-03 resolved;
-  staging keys needed for S12 live KOT test) · Shadowfax/Meta (not started) · domain (S16). Razorpay test keys: HELD.
-- Gate 0 COMPLETE. Debt T-006..T-017 (T-004, T-009 resolved). Risk R-005. D-007/D-008.
-- PROCESS: branch-CI-green is the merge gate (push branch → watch branch CI → squash to main;
-  matters most on CI/boot/lifecycle changes). PowerShell git one line at a time. `git status`
-  clean before each session. On money path verify the DB ROW. CI is the source of truth.
-  PowerShell probes: use Invoke-RestMethod / -UseBasicParsing (legacy IE parser shows false []).
+  staging keys needed for S12 KOT live test). Shadowfax/Meta (not started). domain (S16). Razorpay test: HELD.
+- Gate 0 COMPLETE. Debt T-006..T-018 (T-004, T-009 resolved). Risk R-005. D-007/D-008/D-009.
+- PROCESS: branch-CI-green is the MERGE GATE (worked perfectly in S11A — main never went red
+  through a long CI fight). Squash to main only after branch green. Do memory-file commits on a
+  CLEAN tree (uncommitted memory edits caused the S11A merge tangle). NEVER print secrets in shell
+  commands. PowerShell git one line at a time; probes via Invoke-RestMethod/-UseBasicParsing. On
+  money path verify the DB ROW. CI is the source of truth.
 
 ---
 
@@ -541,6 +554,66 @@ C-03 · ~~UNDECIDED~~ → RESOLVED 2026-06-16 · Kitchen progression driven by P
   test user + a way to drive the webhook in-test. First E2E; guards S5/S8/S11 shared surfaces.
 - PARKED: none.
 
+### Session 11A — Playwright critical-path E2E + webhook simulator  ·  MERGED 2026-06-17
+- FIRST end-to-end test. One automated proof of the money path, headless + in CI on every push:
+  menu → cart → checkout → simulated payment.captured → /track reaches Placed. Guards the
+  S5/S8/S11 shared surfaces forever. NOT a money-logic session — test infra around verified logic.
+- DEPS (approved): @playwright/test, wait-on (apps/web, chromium only). No app/route/RLS/money
+  change anywhere.
+- Files: apps/api/scripts/ — simulate-razorpay-webhook.js (the REUSABLE simulator power-tool;
+  looks up order, builds payment.captured, HMAC-signs the EXACT string it POSTs — S9 lesson;
+  paise only at the edge), seed-test-user.js (admin create-or-update test_e2e@yumyumtree.local +
+  customers row), cleanup-e2e.js (deletes test user's orders/items/events/outbox + pay_test_*
+  webhooks). ALL THREE call assertSafeTestDb() first (prod-fence). apps/web/e2e/ — auth.ts
+  (signs in via @supabase/ssr server client, captures the library's OWN cookie shape, injects into
+  Playwright context → app loads authed, no OAuth UI — clever: same lib writes+reads, no
+  hand-rolled cookie to drift), checkout.spec.ts (real flow, stubs window.Razorpay, intercepts
+  POST /api/orders for order_id, shells out to the simulator, polls /track for Placed),
+  cart-gate.spec.ts, global-setup/teardown, playwright.config.ts. CI: new `e2e` job boots api+web,
+  wait-on, chromium --with-deps, artifacts on failure.
+- THREE naive-spec corrections (the prompt/roadmap was wrong; Claude caught all three):
+  (1) no webhook simulator existed (S9 used hand-crafted curl) → BUILT it this session; (2) no
+  /login redirect exists (gate is client-side, T-013) → cart-gate asserts the SIGN-IN GATE
+  appears, not a redirect; (3) /checkout shows "payment coming soon" and never constructs
+  window.Razorpay → stub is defensive-only, NOT asserted called.
+- VERIFIED LOCAL (real Supabase): 5× green (3 consecutive + shakeout + headed). Headed run drove
+  the full flow visually. ANTI-FALSE-GREEN proven: api killed → checkout.spec FAILS loudly (menu
+  cards never render against dead /api/menu), cart-gate still passes (specific, not blanket) —
+  Claude even caught its OWN false-green (pkill -f doesn't reach Windows node; api stayed up;
+  re-killed via port listener). Cleanup verified: post-run orders=[]/webhooks=[].
+- CI FIGHT (the real work — branch-CI gate contained ALL of it; main never went red):
+  (a) e2e red — wait-on timeout, both ports down. Part 1 added a dump_diag (logs+listeners on
+  failure) so the boot error became legible. (b) Dump showed `connect ENETUNREACH 2406:da1a:...
+  :5432` — pg-boss's direct host is IPv6-only, GitHub runners are IPv4-only → api process.exit(1)
+  on boot. (c) FIX = D-009: session-pooler DATABASE_URL (IPv4, session-mode, :5432) in the GitHub
+  secret. api then booted (pg-boss connected). (d) Next red — `EADDRINUSE :::4000`: job-level
+  PORT=4000 (for api) was inherited by `next dev`, which binds PORT → web collided on 4000. Fix:
+  `npm run dev -- -p 3000` (CLI -p beats env PORT). (e) GREEN on main 9316c61, all 3 jobs incl e2e.
+- D-009 logged (session pooler everywhere). The mobile-hotspot workaround RETIRED: local
+  apps/api/.env also switched to the pooler → ethernet works for every session (verified: api
+  boots clean on ethernet, pg-boss connected, no ENETUNREACH). CLAUDE.md LOCAL ENV block rewritten.
+- SECURITY ITEM → T-018: the Supabase service_role key was printed in plaintext in an ad-hoc
+  shell command during verification (visible in chat scrollback). Per §29 (rotate on exposure):
+  ROTATE the service_role key (Supabase → Settings → API), update apps/api/.env + the GitHub
+  SUPABASE_SERVICE_ROLE_KEY secret. Dev-only, private repo → low risk, but rotate-first is the rule.
+- GIT HISTORY WART (content correct, shape messy — deliberately NOT fixed): the S11A merge got
+  tangled (aborted cherry-pick → reset main to branch tip → squash carried only memory files).
+  Net: main has ALL S11A files + the pooler memory update, no commits lost (reflog-confirmed), but
+  S11A is 4 commits not 1 squash, and commit 9316c61's message says "S11A feature" while its diff
+  is only the memory files (real test files are in 41b37ae). Left as-is: rewriting freshly-pushed
+  public history right after 3 git mishaps is higher-risk than a cosmetic-only wart. LESSON: do
+  memory-file commits on a CLEAN tree / dedicated step — uncommitted memory edits caused the
+  checkout-abort cascade.
+- NOTE: api integration tests that previously SKIPPED in CI (CI_HAS_DEV_DB gate) now RUN there
+  (dev secrets added for the e2e job) — more real CI coverage as a side benefit.
+- Concerns for S12 (next): real PetPooja KOT. Needs staging credentials (only remaining PetPooja
+  blocker — callback confirmed, docs in hand). T-016 applies: the /saveorder call MUST be
+  idempotent (drain is at-least-once; clientOrderID is the idempotency key). Maps PetPooja status
+  codes → §7 (1/2/3 all = accepted; needs a translation layer). The S11A E2E guards the money path
+  while S12 swaps the pushKot stub for the real call.
+- PARKED: next build && next start CI determinism switch (would also need -p 3000 / PORT handling
+  for next start) — noted, deferred. order_events timeline UI (S20). Razorpay modal.
+
 ---
 
 ## 8. OPEN RISKS  (R-### · risk · likelihood/impact · trigger-to-watch · owner · status)
@@ -620,6 +693,12 @@ T-017 · Dead localStorage.token/user keys (old experiment: token, user with tes
   impersonates real auth and has caused an auth-investigation detour TWICE (S7, S11) · repay:
   find and delete any code that writes localStorage 'token'/'user'; optionally clear them on load.
   Low effort, removes a recurring debugging tripwire.
+T-018 · ⚠️ SECURITY · Supabase service_role key exposed in chat scrollback · printed in plaintext
+  in an ad-hoc verification shell command during S11A · the service_role key bypasses RLS entirely
+  (read/write/delete anything) · per §29 (rotate on exposure over an insecure channel): ROTATE it
+  (Supabase → Settings → API → roll service_role), then update apps/api/.env + the GitHub
+  SUPABASE_SERVICE_ROLE_KEY secret · dev-only + private repo = low practical risk, but rotate-first
+  is the non-negotiable rule · repay: NOW (before relying on it further).
 (more accrue as PARKED items from sessions)
 
 ---
@@ -676,6 +755,13 @@ T-017 · Dead localStorage.token/user keys (old experiment: token, user with tes
   real token→own orders, SQL transition→stepper advances live, offline→poll→restore. CI green.
   No prod deploy (S14A). ROLLBACK: policies are additive over deny-all; dropping them reverts to
   deny-all (safe).
+- 2026-06-17 · DEV (no prod yet) · S11A (main tip 9316c61) · no SQL migration; test infra only
+  (Playwright E2E + simulator/seed/cleanup scripts + CI e2e job). CONFIG CHANGES (not code):
+  GitHub DATABASE_URL secret + local apps/api/.env switched to the SESSION POOLER (D-009); dev
+  Supabase secrets + RAZORPAY_WEBHOOK_SECRET added to GitHub for the e2e job; email/password
+  provider enabled in dev Supabase. CI now has 3 jobs (api, web, e2e) — all green on main. Messy
+  merge (see S11A history block) but content correct, no commits lost. ROLLBACK: n/a (additive
+  test infra). FOLLOW-UP: T-018 (rotate exposed service_role key).
 (none yet — first deploy is Session 15)
 
 ---

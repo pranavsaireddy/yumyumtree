@@ -71,46 +71,44 @@ with the owner operating it from the admin dashboard without developer help.
 ---
 
 ## CURRENT STATE (rewritten every session)
-- Phase D/E (fulfilment, mocked). S1–S11 MERGED + main green (cea27c8). Customer can browse →
-  cart → checkout → pay → confirm → FAN-OUT to queues (stubs) → and WATCH IT LIVE on
-  /track/[orderId] (RLS-scoped read + Realtime + 15s poll fallback). Next: S11A (Playwright
-  critical-path E2E — V2 patch inserts it after S11). Confirm against roadmap at Prep.
-- 96 api tests; web build green. Verified live S11: anon→0 orders, own-token→own 3 orders, SQL
-  transition→stepper advances live (pill "Live"), offline→poll→restore, logged-out→sign-in.
-- AUTH (settled S11): real session = Supabase cookie sb-<ref>-auth-token (S6 Google OAuth via
-  @supabase/ssr); browser client reads it → auth.uid() works for RLS. The custom localStorage.
-  token (id/iat/exp) is INERT leftover — T-017, delete it (tripped auth investigations twice).
-- PATTERN LOCKED (D-008): customer order reads go via RLS (Supabase browser client), NOT a
-  backend GET route (no GET /api/orders/:id exists). Reads via RLS, writes via API.
+- Phase D/E (fulfilment, mocked). S1–S11A MERGED + main green (9316c61). Money path is now GUARDED
+  BY AN AUTOMATED E2E in CI on every push (menu→cart→checkout→simulated webhook→/track Placed).
+  Next: S12 (real PetPooja KOT — swap the pushKot stub for live /saveorder).
+- CI = 3 jobs (api vitest, web lint+build, e2e playwright), all green on main. Local api boots on
+  ethernet via the session pooler (D-009). 5× green E2E local.
+- ⚠️ DO FIRST: T-018 — ROTATE the Supabase service_role key (exposed in chat during S11A). Update
+  apps/api/.env + GitHub secret. Low risk (dev/private) but rotate-first is the rule.
 - ⚠️ BEFORE-LAUNCH debts: T-014 (reconcile cron), T-015 (drain wired, workers STUBS — no real
-  kitchen until S12/S13), T-016 (S12/S13 must make PetPooja/Shadowfax idempotent). NEW T-017
-  (dead localStorage cleanup). Block go-live, not building.
+  kitchen until S12/S13), T-016 (S12/S13 PetPooja/Shadowfax calls must be IDEMPOTENT; clientOrderID
+  is the key). T-017 (dead localStorage), T-018 (rotate key). Block go-live, not building.
+- PATTERN LOCKED: reads via RLS, writes via API (D-008, no GET /api/orders/:id). DB connectivity =
+  session pooler everywhere (D-009; direct host IPv6-only; never :6543 transaction pooler).
 - TEAM: SOLO build — Pranav owns backend and frontend. No Anudeep.
-- Prod env: none yet (S14A). RLS read policies live (007). Realtime on orders enabled. pgboss
-  schema in DEV. Frontend still shows "payment coming soon" (no Razorpay modal).
-- Blockers: PetPooja CREDENTIALS only (callback CONFIRMED + docs v2.1.0 in hand, C-03 resolved;
-  staging keys needed for S12), Shadowfax/Meta (not started), domain (S16). Razorpay test: HELD.
-- Gate 0 COMPLETE. Debt T-006..T-017 (T-004, T-009 resolved). Risk R-005. D-007/D-008.
-- PROCESS: branch-CI-green is the MERGE GATE (push branch → watch branch CI → squash to main).
-  PowerShell git one line at a time; probes via Invoke-RestMethod / -UseBasicParsing (legacy IE
-  parser can show false []). Supabase session in COOKIES. On money path verify the DB ROW. CI = truth.
+- Prod env: none yet (S14A). RLS read policies live (007). Realtime on orders. pgboss in DEV.
+  Frontend still "payment coming soon" (no Razorpay modal). E2E test user test_e2e@… in dev.
+- Blockers: PetPooja CREDENTIALS only (callback confirmed, docs in hand, C-03 resolved; staging
+  keys needed for S12), Shadowfax/Meta (not started), domain (S16). Razorpay test: HELD.
+- Gate 0 COMPLETE. Debt T-006..T-018 (T-004, T-009 resolved). Risk R-005. D-007/D-008/D-009.
+- PROCESS: branch-CI-green is the MERGE GATE (worked perfectly S11A — main never red through a long
+  CI fight). Memory-file commits on a CLEAN tree. NEVER print secrets in shell. Supabase session in
+  COOKIES. On money path verify the DB ROW. CI is the source of truth.
 ---
 
 ## RECENT SESSIONS (last 3 — full history in MASTER §7)
-- S11 (MERGED 2026-06-16): Order tracking — RLS read policies + Realtime UI + poll fallback.
-  Migration 007_rls_policies.sql (POLICIES ONLY; RLS enabled in 004): menu public; orders/
-  order_items/order_events owner-scoped (customer_id=auth.uid() / EXISTS join). No write policies.
-  /track/[orderId] reads via RLS browser client (D-008: NO GET route), Realtime + 15s poll,
-  StatusStepper (delivery/dine_in) + terminals. Verified: anon→0, own→own 3 orders, live advance,
-  offline→poll→restore, logged-out→sign-in. Auth scare resolved (Supabase cookie real; localStorage
-  .token inert → T-017). T-004 resolved.
+- S11A (MERGED 2026-06-17): FIRST E2E — Playwright critical-path + reusable webhook simulator.
+  menu→cart→checkout→simulated payment.captured→/track Placed, headless in CI on every push.
+  3 DEV-only scripts (assertSafeTestDb-guarded), @supabase/ssr cookie-injection auth, anti-false-
+  green proven. Caught 3 naive-spec errors (no simulator existed, no /login redirect, Razorpay not
+  constructed). CI fight: D-009 session-pooler (direct host IPv6-only, runners IPv4) + web -p 3000
+  (PORT=4000 leaked into next dev). T-018 (rotate exposed service_role key). Messy merge but content
+  correct. Hotspot retired.
+- S11 (MERGED 2026-06-16): Order tracking — RLS read policies (007, policies-only) + Realtime UI +
+  poll fallback. orders owner-scoped (customer_id=auth.uid()); menu public. /track reads via RLS
+  (D-008: no GET route). Verified: anon→0, own→own 3 orders, live advance, offline→poll→restore.
+  T-004 resolved, T-017 added.
 - S10 (MERGED 2026-06-16): pg-boss queue + outbox drain + STUB workers. order.placed fans to
-  pushKot+notify always, +dispatch when delivery. At-least-once, restart-idempotent. config
-  refuses :6543. order-not-found permanent (.maybeSingle). HOTFIX: /readyz short-circuits before
-  DB + 2s abort (CI hung on placeholder DB). 96 tests. T-015 updated, T-016 added.
-- S9 (MERGED 2026-06-15): Razorpay payment webhook. express.raw before json, HMAC timing-safe;
-  payment.captured → confirm_order (mig 005) placed + events/outbox; 3-layer idempotency; amount
-  check. 89 tests. Verified live. Debt T-014 + T-015.
+  pushKot+notify always, +dispatch when delivery. At-least-once, restart-idempotent. config refuses
+  :6543. /readyz hotfix. 96 tests. T-015 updated, T-016 added.
 
 ## POINTER INDEX
 - Schema: arch §6 · State machine: §7 · Idempotency: §8 · Queue: §9 · Outbox: §10
