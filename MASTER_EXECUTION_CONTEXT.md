@@ -89,6 +89,22 @@ D-007 · 2026-06-14 · Google sign-in only; login required at checkout (S8); NO 
   shadow-row model + tracking/loyalty/RLS adaptations first.
   Decided-by: human decision (Option A), Fable flagged the conflict + recommended it.
 
+D-008 · 2026-06-16 · NO GET /api/orders/:id backend route. Customer-facing single-order reads
+  go through the Supabase browser client (anon key) using the orders_select_own RLS SELECT
+  policy (007), which scopes to customer_id=auth.uid(). Pattern locked: READS VIA RLS, WRITES
+  VIA THE API. Why: S11's whole purpose was to prove safe direct RLS reads; a GET route would
+  duplicate that surface and expand scope. (The S11 prompt wrongly claimed the GET route
+  "already exists from S7" — it never did; S7 built only POST /api/orders. Claude Code caught
+  the false premise and asked; human ruled RLS-read.) Two RLS properties this depends on:
+  (1) read requires an authenticated session (policy is TO authenticated; auth.uid() null →
+  zero rows) — a logged-out visitor on a track link is sent to Google sign-in, not "not found";
+  (2) nonexistent and foreign orders BOTH return zero rows and MUST show the SAME "not found"
+  screen — never distinguish them (distinguishing leaks existence).
+  Revisit-if: a future need for a customer to read own orders from the frontend → add/extend an
+  RLS SELECT policy + read via the browser client. Do NOT add a backend GET route.
+  Decided-by: human ruling mid-S11; Fable concurred (RLS-read is the faithful realization of the
+  session's design, not a deviation).
+
 ---
 
 ## 5. CUTS REGISTER  (append-only, owner-signed; a cut without a signature is a forgotten feature)
@@ -111,30 +127,30 @@ C-03 · ~~UNDECIDED~~ → RESOLVED 2026-06-16 · Kitchen progression driven by P
 ---
 
 ## 6. CURRENT STATE  (the ONLY fully-rewritten section — ≤10 lines)
-- Phase D/E (fulfilment, mocked) underway. S1–S10 MERGED + main green. Money loop closed (S9) AND
-  the placed order now FANS OUT: outbox drain → pg-boss queues → 4 stub workers writing trace
-  events. Next: S11 (Order Tracking: RLS read policies + Realtime UI + polling fallback).
-- main clean + pushed (adde37a). CI green (both jobs). 96 api tests. Live + verified end-to-end:
-  menu (DB) + cart (persisted) + Google auth + order creation + delivery checkout + payment
-  webhook + OUTBOX DRAIN/FAN-OUT (order 57cc372e, restart-idempotent). Workers are STUBS (no real
-  KOT/dispatch yet → S12/S13). Frontend still shows "payment coming soon" (no Razorpay modal).
-- ⚠️ S11 CHANGES CHARACTER: first session to OPEN RLS (read policies for customer-owned rows) —
-  touches SECURITY POSTURE; brings the FRONTEND back (Realtime tracking + polling fallback). The
-  deny-all wall opens a deliberate crack. Review RLS line-by-line; anon-key zero-rows probe.
-- TEAM: SOLO build — Pranav owns backend AND frontend. No Anudeep.
-- Prod env: none yet (S14A). CI repo secrets not added (DB tests skip/placeholder by design —
-  /readyz now fast-fails on unreachable DB). RLS still deny-all until S11. pgboss schema now in DEV.
-- ⚠️ BEFORE-LAUNCH debts: T-014 (reconcile cron — lost webhook = stuck order), T-015 (drain wired
-  but workers are stubs — no real kitchen until S12/S13). T-016 (S12/S13 must make PetPooja/
-  Shadowfax calls idempotent — drain is at-least-once). None block building; T-014/T-015 block go-live.
-- Blockers: PetPooja CREDENTIALS (callback now CONFIRMED + docs in hand, C-03 resolved; only the
-  staging keys remain — needed for S12 live KOT test, gated by integration-fee approval) ·
-  Shadowfax (not started) · Meta (not started) · domain not owned (S16). Razorpay test keys: HELD.
-- Gate 0 COMPLETE. Debt T-006..T-016 (T-009 resolved). Risk R-005. D-007 no guest checkout.
-- PROCESS (reinforced S10): branch-CI-green is the MERGE GATE — push branch, watch branch CI
-  green, THEN squash to main (matters most on CI/boot/lifecycle changes; local≠CI bit again).
-  PowerShell git one line at a time. `git status` clean before each session. On money path verify
-  the DB ROW not just UI. CI is the source of truth.
+- Phase D/E (fulfilment, mocked). S1–S11 MERGED + main green (cea27c8). Customer can now: browse →
+  cart → checkout → pay → order confirms → FAN-OUT to queues (stubs) → and WATCH IT LIVE on
+  /track/[orderId] (RLS-scoped read + Realtime + poll fallback). Next: S11A (Playwright critical-
+  path E2E — V2 patch inserts it right after S11). Confirm against roadmap at Prep.
+- 96 api tests; web build green. Verified live this session: RLS (anon→0 orders, own-token→own 3
+  orders), live stepper advance (pill "Live"), offline→poll→restore, logged-out→sign-in.
+- AUTH MECHANISM (settled S11): real session = Supabase cookie sb-<ref>-auth-token (S6 Google
+  OAuth via @supabase/ssr); browser client reads it → auth.uid() works for RLS. The custom
+  localStorage.token (id/iat/exp) is INERT leftover (T-017 — delete it; tripped us twice).
+- PATTERN LOCKED (D-008): customer order reads go via RLS (Supabase browser client), NOT a
+  backend GET route (there is no GET /api/orders/:id). Reads via RLS, writes via API.
+- ⚠️ BEFORE-LAUNCH debts: T-014 (reconcile cron), T-015 (drain wired but workers STUBS — no real
+  kitchen until S12/S13), T-016 (S12/S13 must make PetPooja/Shadowfax calls idempotent). Block
+  go-live, not building. NEW: T-017 (dead localStorage cleanup, low-effort).
+- TEAM: SOLO build — Pranav owns backend and frontend. No Anudeep.
+- Prod env: none yet (S14A). RLS now has read policies (007). pgboss schema in DEV. Realtime on
+  `orders` enabled. Frontend still shows "payment coming soon" (no Razorpay modal).
+- Blockers: PetPooja CREDENTIALS only (callback CONFIRMED + docs v2.1.0 in hand, C-03 resolved;
+  staging keys needed for S12 live KOT test) · Shadowfax/Meta (not started) · domain (S16). Razorpay test keys: HELD.
+- Gate 0 COMPLETE. Debt T-006..T-017 (T-004, T-009 resolved). Risk R-005. D-007/D-008.
+- PROCESS: branch-CI-green is the merge gate (push branch → watch branch CI → squash to main;
+  matters most on CI/boot/lifecycle changes). PowerShell git one line at a time. `git status`
+  clean before each session. On money path verify the DB ROW. CI is the source of truth.
+  PowerShell probes: use Invoke-RestMethod / -UseBasicParsing (legacy IE parser shows false []).
 
 ---
 
@@ -471,6 +487,52 @@ C-03 · ~~UNDECIDED~~ → RESOLVED 2026-06-16 · Kitchen progression driven by P
   key starts being able to read specific rows — the deny-all wall opens a crack, deliberately.
 - PARKED: none (hardening + hotfix folded into the session, not deferred).
 
+### Session 11 — Order Tracking: RLS read policies + Realtime UI + polling fallback  ·  MERGED 2026-06-16
+- FIRST session to OPEN RLS read access (the deny-all wall from 004 gets its first deliberate
+  crack) AND first to bring the FRONTEND back since S8. Security-posture session — reviewed the
+  policy USING clauses line-by-line + proved them with the anon-key probe (the non-negotiable gate).
+- Migration 007_rls_policies.sql — POLICIES ONLY (RLS already enabled in 004; V2 patch O1). NOT
+  006 (taken by place_order, S7). Five SELECT policies, idempotent (DROP IF EXISTS + CREATE):
+  menu_categories/menu_items → TO anon,authenticated USING(true) (public menu); orders → TO
+  authenticated USING(customer_id=auth.uid()); order_items/order_events → TO authenticated USING
+  EXISTS-join to an owned order. NO write policies (service_role bypasses RLS, backend
+  unaffected); NO anon access beyond the two menu tables.
+- Frontend (3 files): lib/realtime.ts subscribeToOrder (channel order-<id>, postgres_changes
+  UPDATE filter id=eq.<id>; SUBSCRIBED→onRestored, CHANNEL_ERROR/TIMED_OUT/CLOSED→onDegraded;
+  uses existing anon-key browser client). components/StatusStepper.tsx (delivery [placed,
+  confirmed,preparing,ready,dispatched=Out for delivery,delivered]; dine_in [...,served]; matches
+  §6 enum; TERMINALS map for cancelled/rejected/payment_failed/expired). app/track/[orderId]/
+  page.tsx (Next 16 client page, params via React use(); reads order via RLS browser client —
+  see D-008; degraded→15s poll re-select, restored→stop; "Live"/"Refreshing periodically" pill;
+  logged-out→Google sign-in; not-found==not-yours→one "order not found" screen).
+- KEY DEVIATION (→ D-008): the prompt wrongly said GET /api/orders/:id "exists from S7" — it
+  doesn't (S7 built only POST). Claude Code CAUGHT it and asked; ruled RLS-read (no backend
+  route). This is the locked pattern: reads via RLS, writes via API.
+- AUTH SCARE RESOLVED: mid-session Pranav flagged a custom localStorage.token (id/iat/exp only,
+  not Supabase Auth) → would break auth.uid() RLS. Investigated: the localStorage.token is the
+  SAME INERT S7-era leftover (test1/id:35), authenticates nothing. The REAL session is the
+  Supabase cookie sb-<ref>-auth-token (S6 Google OAuth via @supabase/ssr), which the browser
+  client reads automatically → auth.uid() resolves. Proven: anon probe→0 rows; real cookie
+  token→exactly the 3 own orders (be0ee15c/57cc372e/97b3c311). RLS strategy SOUND.
+- VERIFIED LIVE (all gates): anon key → orders/order_items/order_events all []; menu_items →
+  rows (PowerShell note: use -UseBasicParsing / Invoke-RestMethod, legacy IE parser can show
+  false []). Real token → own 3 orders only. SQL transition_order placed→confirmed→preparing→
+  ready → stepper advanced LIVE in browser within ~2s, pill "Live" (Realtime publication on
+  orders confirmed working). Offline→"Refreshing periodically"→restore→"Live". Incognito→sign-in
+  screen (not "not found"). State machine also confirmed enforcing at DB level (confirmed→
+  confirmed rejected with the §7 error).
+- No backend route change; API untouched → 96 api tests stand. web build/lint/tsc green.
+- DEBT: T-004 RESOLVED (RLS read policies now exist). T-017 added (delete the dead localStorage.
+  token/user keys — inert leftover that has now caused an auth-investigation detour TWICE, S7
+  and S11; it impersonates real auth and misleads debugging).
+- NOTE: Claude Code wrote a memory file to C:\Users\PRANAV\.claude\projects\...\memory\ — that's
+  a CC-local store, NOT our MASTER/CLAUDE.md. The decision it captured is now properly recorded
+  here as D-008. Don't treat the CC-local file as source of truth (won't travel with the repo).
+- Concerns for S11A (next, V2 patch inserts it here): Playwright critical-path E2E — menu→cart→
+  checkout→simulated webhook→tracking reaches placed/confirmed, headless in CI. Needs a seeded
+  test user + a way to drive the webhook in-test. First E2E; guards S5/S8/S11 shared surfaces.
+- PARKED: none.
+
 ---
 
 ## 8. OPEN RISKS  (R-### · risk · likelihood/impact · trigger-to-watch · owner · status)
@@ -494,8 +556,10 @@ T-001 · Phone-OTP login UI ships disabled (no SMS provider funded) · apps/web 
 T-002 · place_order / redeem_loyalty / award_loyalty / admin_transition_order RPCs not built ·
   apps/api/db · none (scheduled) · repay: S7 / S17 / S19 as specced.
 T-003 · admin_audit_log table not built · apps/api/db · none (scheduled) · repay: S18.
-T-004 · RLS read policies absent (deny-all only) · all tables · frontend can't read via anon
-  key yet (intended) · repay: S11.
+T-004 · ~~RESOLVED (S11)~~ · RLS read policies absent (deny-all only) · all tables · resolved by
+  migration 007_rls_policies.sql: menu public-readable; orders/order_items/order_events readable
+  only by the owning authenticated customer. Verified via anon-key probe (0 rows) + real-token
+  probe (own orders only).
 T-005 · No checksummed migration ledger; SQL run by hand · apps/api/db · drift risk across
   envs · repay: S14A (scripts/migrate.js + schema_migrations).
 T-006 · 5 npm-audit advisories (1 crit/1 high) in vitest→esbuild/vite chain · apps/api ·
@@ -542,6 +606,12 @@ T-016 · ⚠️ S12/S13 CORRECTNESS · Outbox drain is AT-LEAST-ONCE · apps/api
   calls behind pos.pushKot / delivery.dispatch, a re-send = DUPLICATE KOT / DUPLICATE rider unless
   the calls are idempotent · repay: S12/S13 MUST make PetPooja/Shadowfax calls idempotent (e.g.
   idempotency key / check-before-send / dedupe on an external ref) — do not assume exactly-once.
+T-017 · Dead localStorage.token/user keys (old experiment: token, user with test1/id:35) ·
+  apps/web (wherever they were once written; likely no longer written, just stale in browsers) ·
+  INERT — not read by the Supabase client, not sent on RLS reads, authenticates nothing. BUT it
+  impersonates real auth and has caused an auth-investigation detour TWICE (S7, S11) · repay:
+  find and delete any code that writes localStorage 'token'/'user'; optionally clear them on load.
+  Low effort, removes a recurring debugging tripwire.
 (more accrue as PARKED items from sessions)
 
 ---
@@ -592,6 +662,12 @@ T-016 · ⚠️ S12/S13 CORRECTNESS · Outbox drain is AT-LEAST-ONCE · apps/api
   fixed forward by adde37a (boss short-circuit + 2s DB abort) — main green. No prod deploy (S14A).
   ROLLBACK: none needed; forward-fix only. NOTE: pgboss schema will be re-created on PROD's first
   boot at S14A (DDL on a fresh direct-5432 prod connection).
+- 2026-06-16 · DEV (no prod yet) · S11 (cea27c8) · ran migration 007_rls_policies.sql in the
+  Supabase SQL editor (5 SELECT policies; RLS already enabled in 004). Enabled Realtime
+  publication on `orders` (dashboard) so live UPDATEs stream. Verified live: anon→0 order rows,
+  real token→own orders, SQL transition→stepper advances live, offline→poll→restore. CI green.
+  No prod deploy (S14A). ROLLBACK: policies are additive over deny-all; dropping them reverts to
+  deny-all (safe).
 (none yet — first deploy is Session 15)
 
 ---
