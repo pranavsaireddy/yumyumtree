@@ -166,8 +166,11 @@ jobs:
           API_PID=$!
           echo "api started (pid $API_PID)"
 
-          # Start the web dev server. Background; keep its PID.
-          npm run dev > /tmp/web.log 2>&1 &
+          # Start the web dev server on :3000. The job-level PORT=4000 (for the api) is inherited
+          # by every step, and `next dev` reads PORT from the env — so WITHOUT this it would bind
+          # :4000 and collide with the api (EADDRINUSE). The -p flag takes precedence over PORT and
+          # pins web to 3000 (matching wait-on's target + PLAYWRIGHT_BASE_URL). Background; keep PID.
+          npm run dev -- -p 3000 > /tmp/web.log 2>&1 &
           WEB_PID=$!
           echo "web started (pid $WEB_PID)"
 
