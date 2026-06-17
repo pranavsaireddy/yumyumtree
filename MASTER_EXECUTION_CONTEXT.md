@@ -153,20 +153,18 @@ C-03 · ~~UNDECIDED~~ → RESOLVED 2026-06-16 · Kitchen progression driven by P
   reaches Placed). Next: S12 (real PetPooja KOT — swap the pushKot stub for the live /saveorder).
 - CI now has 3 jobs (api vitest, web lint+build, e2e playwright) — all green on main. Local: api
   boots on ETHERNET via the session pooler (D-009; mobile-hotspot retired). 5× green E2E local.
-- ⚠️ DO FIRST: T-018 — ROTATE the Supabase service_role key (exposed in chat scrollback during
-  S11A verification). Update apps/api/.env + GitHub secret. Low risk (dev/private) but rotate-first.
 - DB CONNECTIVITY (D-009): DATABASE_URL = SESSION POOLER everywhere (aws-0-…pooler:5432, IPv4,
   session-mode). Direct host is IPv6-only → unreachable from IPv4 nets (ethernet, CI runners).
   NEVER the :6543 transaction pooler (breaks pg-boss; config refuses it). [CLAUDE.md → LOCAL ENV.]
 - ⚠️ BEFORE-LAUNCH debts: T-014 (reconcile cron), T-015 (drain wired, workers STUBS — no real
   kitchen until S12/S13), T-016 (S12/S13 must make PetPooja/Shadowfax calls IDEMPOTENT — drain is
-  at-least-once; clientOrderID is the key). T-017 (dead localStorage). T-018 (rotate key).
+  at-least-once; clientOrderID is the key). T-017 (dead localStorage).
 - TEAM: SOLO build — Pranav owns backend and frontend. No Anudeep.
 - Prod env: none yet (S14A). RLS read policies live (007). Realtime on orders. pgboss schema in DEV.
   Frontend still shows "payment coming soon" (no Razorpay modal). E2E test user test_e2e@… in dev.
 - Blockers: PetPooja CREDENTIALS only (callback CONFIRMED + docs v2.1.0 in hand, C-03 resolved;
   staging keys needed for S12 KOT live test). Shadowfax/Meta (not started). domain (S16). Razorpay test: HELD.
-- Gate 0 COMPLETE. Debt T-006..T-018 (T-004, T-009 resolved). Risk R-005. D-007/D-008/D-009.
+- Gate 0 COMPLETE. Debt T-006..T-018 (T-004, T-009, T-018 resolved). Risk R-005. D-007/D-008/D-009.
 - PROCESS: branch-CI-green is the MERGE GATE (worked perfectly in S11A — main never went red
   through a long CI fight). Squash to main only after branch green. Do memory-file commits on a
   CLEAN tree (uncommitted memory edits caused the S11A merge tangle). NEVER print secrets in shell
@@ -693,12 +691,13 @@ T-017 · Dead localStorage.token/user keys (old experiment: token, user with tes
   impersonates real auth and has caused an auth-investigation detour TWICE (S7, S11) · repay:
   find and delete any code that writes localStorage 'token'/'user'; optionally clear them on load.
   Low effort, removes a recurring debugging tripwire.
-T-018 · ⚠️ SECURITY · Supabase service_role key exposed in chat scrollback · printed in plaintext
-  in an ad-hoc verification shell command during S11A · the service_role key bypasses RLS entirely
-  (read/write/delete anything) · per §29 (rotate on exposure over an insecure channel): ROTATE it
-  (Supabase → Settings → API → roll service_role), then update apps/api/.env + the GitHub
-  SUPABASE_SERVICE_ROLE_KEY secret · dev-only + private repo = low practical risk, but rotate-first
-  is the non-negotiable rule · repay: NOW (before relying on it further).
+T-018 · ~~RESOLVED (2026-06-17)~~ · SECURITY · Supabase secret key (sb_secret_, the new-system
+  key in apps/api/.env as SUPABASE_SERVICE_ROLE_KEY) was exposed in chat scrollback during S11A
+  verification · RESOLVED: created a new sb_secret_ key → updated apps/api/.env + GitHub
+  SUPABASE_SERVICE_ROLE_KEY → verified api boots clean on the new key (pg-boss connected) →
+  DELETED the old exposed key (so the scrollback value is now dead). NOTE: the exposed key was the
+  NEW-system sb_secret_, NOT the legacy service_role JWT (separate, unused, untouched). Verify the
+  next CI e2e run is green (confirms GitHub got the new key).
 (more accrue as PARKED items from sessions)
 
 ---

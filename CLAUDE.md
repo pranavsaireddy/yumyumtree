@@ -76,11 +76,9 @@ with the owner operating it from the admin dashboard without developer help.
   Next: S12 (real PetPooja KOT — swap the pushKot stub for live /saveorder).
 - CI = 3 jobs (api vitest, web lint+build, e2e playwright), all green on main. Local api boots on
   ethernet via the session pooler (D-009). 5× green E2E local.
-- ⚠️ DO FIRST: T-018 — ROTATE the Supabase service_role key (exposed in chat during S11A). Update
-  apps/api/.env + GitHub secret. Low risk (dev/private) but rotate-first is the rule.
 - ⚠️ BEFORE-LAUNCH debts: T-014 (reconcile cron), T-015 (drain wired, workers STUBS — no real
   kitchen until S12/S13), T-016 (S12/S13 PetPooja/Shadowfax calls must be IDEMPOTENT; clientOrderID
-  is the key). T-017 (dead localStorage), T-018 (rotate key). Block go-live, not building.
+  is the key). T-017 (dead localStorage). Block go-live, not building.
 - PATTERN LOCKED: reads via RLS, writes via API (D-008, no GET /api/orders/:id). DB connectivity =
   session pooler everywhere (D-009; direct host IPv6-only; never :6543 transaction pooler).
 - TEAM: SOLO build — Pranav owns backend and frontend. No Anudeep.
@@ -88,7 +86,7 @@ with the owner operating it from the admin dashboard without developer help.
   Frontend still "payment coming soon" (no Razorpay modal). E2E test user test_e2e@… in dev.
 - Blockers: PetPooja CREDENTIALS only (callback confirmed, docs in hand, C-03 resolved; staging
   keys needed for S12), Shadowfax/Meta (not started), domain (S16). Razorpay test: HELD.
-- Gate 0 COMPLETE. Debt T-006..T-018 (T-004, T-009 resolved). Risk R-005. D-007/D-008/D-009.
+- Gate 0 COMPLETE. Debt T-006..T-018 (T-004, T-009, T-018 resolved). Risk R-005. D-007/D-008/D-009.
 - PROCESS: branch-CI-green is the MERGE GATE (worked perfectly S11A — main never red through a long
   CI fight). Memory-file commits on a CLEAN tree. NEVER print secrets in shell. Supabase session in
   COOKIES. On money path verify the DB ROW. CI is the source of truth.
